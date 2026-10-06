@@ -68,8 +68,11 @@ const addWorkEntry = async (req, res) => {
       return errorResponse(res, 'employeeId, date and bagCount are required', 'VALIDATION_ERROR');
     if (bagCount <= 0) return errorResponse(res, 'Bag count must be positive', 'VALIDATION_ERROR');
 
-    const [emp] = await pool.execute('SELECT id, name, rate_per_bag FROM employees WHERE id = ?', [employeeId]);
+    const [emp] = await pool.execute('SELECT id, name, rate_per_bag, is_active FROM employees WHERE id = ?', [employeeId]);
     if (!emp.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
+    if (emp[0].is_active === 0 || emp[0].is_active === false) {
+      return errorResponse(res, 'Cannot add work entry for an inactive employee. Please reactivate them first.', 'EMPLOYEE_INACTIVE', null, 400);
+    }
 
     const rate = ratePerBag || parseFloat(emp[0].rate_per_bag);
     const id = `w_${Date.now()}`;

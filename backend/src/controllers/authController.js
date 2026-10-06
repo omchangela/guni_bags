@@ -55,6 +55,22 @@ const sendOtp = async (req, res) => {
         403
       );
     }
+    // ── INACTIVE EMPLOYEE CHECK ─────────────────────────────────────────────
+    // If this mobile belongs to an employee who is marked inactive, block login immediately
+    const [inactiveEmployees] = await pool.execute(
+      'SELECT id, name, is_active FROM employees WHERE mobile = ? AND is_active = FALSE',
+      [cleanMobile]
+    );
+    if (inactiveEmployees.length > 0) {
+      console.warn(`[AUTH] Blocked login attempt from inactive employee: ${cleanMobile} (${inactiveEmployees[0].name})`);
+      return errorResponse(
+        res,
+        'This account is currently deactivated. Please contact the administrator.',
+        'ACCOUNT_DISABLED',
+        null,
+        403
+      );
+    }
     // ────────────────────────────────────────────────────────────────────────
 
     // Check if user exists in database (auto-create admin if in whitelist but not in DB)
@@ -148,6 +164,15 @@ const verifyOtp = async (req, res) => {
     }
 
     await pool.execute('UPDATE otp_sessions SET is_verified = TRUE WHERE session_id = ?', [sessionId]);
+
+    // Check if this mobile belongs to an employee who is marked inactive
+    const [inactiveEmployees] = await pool.execute(
+      'SELECT id, name, is_active FROM employees WHERE mobile = ? AND is_active = FALSE',
+      [cleanMobile]
+    );
+    if (inactiveEmployees.length > 0) {
+      return errorResponse(res, 'This account is currently deactivated. Please contact the administrator.', 'ACCOUNT_DISABLED', null, 403);
+    }
 
     // Fetch registered user or auto-create if not found
     let [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);

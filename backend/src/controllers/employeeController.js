@@ -118,13 +118,26 @@ const updateEmployee = async (req, res) => {
     const { id } = req.params;
     const { name, mobile, ratePerBag, isActive, address, notes } = req.body;
 
-    const [existing] = await pool.execute('SELECT id FROM employees WHERE id = ?', [id]);
+    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ?', [id]);
     if (!existing.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
 
     await pool.execute(
       'UPDATE employees SET name=?, mobile=?, rate_per_bag=?, is_active=?, address=?, notes=? WHERE id=?',
       [name, mobile || null, ratePerBag, isActive ? 1 : 0, address || '', notes || '', id]
     );
+
+    // If deactivated, sync user table and delete active sessions for this mobile
+    const targetMobile = mobile || existing[0].mobile;
+    if (targetMobile) {
+      const cleanMobile = String(targetMobile).replace(/\D/g, '');
+      if (isActive === false || isActive === 0) {
+        await pool.execute('UPDATE users SET is_active = FALSE WHERE mobile = ?', [cleanMobile]);
+        await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [cleanMobile]);
+      } else if (isActive === true || isActive === 1) {
+        await pool.execute('UPDATE users SET is_active = TRUE WHERE mobile = ?', [cleanMobile]);
+      }
+    }
+
     const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ?', [id]);
     const e = rows[0];
     return successResponse(res, {
@@ -140,11 +153,18 @@ const updateEmployee = async (req, res) => {
 const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const [existing] = await pool.execute('SELECT id FROM employees WHERE id = ?', [id]);
+    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ?', [id]);
     if (!existing.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
 
     // Soft delete: set is_active = false
     await pool.execute('UPDATE employees SET is_active = FALSE WHERE id = ?', [id]);
+
+    if (existing[0].mobile) {
+      const cleanMobile = String(existing[0].mobile).replace(/\D/g, '');
+      await pool.execute('UPDATE users SET is_active = FALSE WHERE mobile = ?', [cleanMobile]);
+      await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [cleanMobile]);
+    }
+
     return successResponse(res, null, 'Employee deleted/deactivated successfully');
   } catch (err) {
     return errorResponse(res, 'Failed to delete employee', 'SERVER_ERROR', err.message, 500);
