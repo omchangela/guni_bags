@@ -19,65 +19,10 @@ const generateTokens = (userId) => {
   return { accessToken, refreshToken };
 };
 
-// POST /auth/register
+// Public registration is DISABLED — this is a closed admin panel.
+// Admin numbers are pre-seeded in the database and controlled via ALLOWED_MOBILES in .env.
 const register = async (req, res) => {
-  try {
-    const { name, mobile, countryCode = '+91', businessName } = req.body;
-
-    if (!name || !String(name).trim()) {
-      return errorResponse(res, 'Name is required', 'VALIDATION_ERROR');
-    }
-    if (!mobile || !String(mobile).trim()) {
-      return errorResponse(res, 'Mobile number is required', 'VALIDATION_ERROR');
-    }
-
-    const cleanMobile = String(mobile).replace(/\D/g, '');
-    if (cleanMobile.length !== 10) {
-      return errorResponse(res, 'Valid 10-digit mobile number is required', 'VALIDATION_ERROR');
-    }
-
-    // Check if user already exists
-    const [existing] = await pool.execute('SELECT id FROM users WHERE mobile = ?', [cleanMobile]);
-    if (existing.length > 0) {
-      return errorResponse(
-        res,
-        'Mobile number is already registered. Please login.',
-        'ALREADY_REGISTERED',
-        null,
-        409
-      );
-    }
-
-    const userId = `usr_${Date.now()}`;
-    const trimmedName = String(name).trim();
-    const bName = (businessName && String(businessName).trim()) ? String(businessName).trim() : `${trimmedName} Trading Co.`;
-
-    await pool.execute(
-      'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
-      [userId, cleanMobile, countryCode, trimmedName, bName, 'OWNER']
-    );
-
-    console.log(`[AUTH] User registered successfully: ${trimmedName} (${cleanMobile})`);
-
-    return successResponse(
-      res,
-      {
-        user: {
-          id: userId,
-          name: trimmedName,
-          mobile: cleanMobile,
-          countryCode,
-          businessName: bName,
-          role: 'OWNER',
-        },
-      },
-      'Registration successful! Please login with your mobile number.',
-      201
-    );
-  } catch (err) {
-    console.error('register error:', err);
-    return errorResponse(res, 'Registration failed', 'SERVER_ERROR', err.message, 500);
-  }
+  return errorResponse(res, 'Registration is not allowed. This is a closed admin system.', 'REGISTRATION_DISABLED', null, 403);
 };
 
 // POST /auth/send-otp
@@ -91,18 +36,38 @@ const sendOtp = async (req, res) => {
       return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
     }
 
-    // Check if user exists in database
-    const [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
-    
-    // If user not found in database: show message please register first
-    if (users.length === 0) {
+    // ── WHITELIST CHECK ─────────────────────────────────────────────────────
+    // Only pre-approved admin numbers (ALLOWED_MOBILES in .env) can access.
+    // Example: ALLOWED_MOBILES=9876543210,9999999999
+    const allowedMobiles = (process.env.ALLOWED_MOBILES || '')
+      .split(',')
+      .map(m => m.trim().replace(/\D/g, ''))
+      .filter(Boolean);
+
+    if (allowedMobiles.length > 0 && !allowedMobiles.includes(cleanMobile)) {
+      console.warn(`[AUTH] Blocked login attempt from non-admin number: ${cleanMobile}`);
       return errorResponse(
         res,
-        'User not registered. Please register first.',
-        'NOT_REGISTERED',
-        'This mobile number is not registered in the system. Please register first.',
-        404
+        'Access denied. This system is restricted to authorized administrators only.',
+        'ACCESS_DENIED',
+        null,
+        403
       );
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
+    // Check if user exists in database (auto-create admin if in whitelist but not in DB)
+    let [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
+
+    if (users.length === 0) {
+      // Auto-create the admin account on first login (no manual registration needed)
+      const adminId = `usr_${Date.now()}`;
+      await pool.execute(
+        'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
+        [adminId, cleanMobile, countryCode, 'Admin', 'Gunny Bags Admin', 'OWNER']
+      );
+      console.log(`[AUTH] Admin account auto-created for: ${cleanMobile}`);
+      [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
     }
 
     const user = users[0];
