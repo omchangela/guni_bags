@@ -30,6 +30,8 @@ api.interceptors.response.use(
 );
 
 // Auth
+export const registerUser = (name: string, mobile: string, countryCode = '+91', businessName?: string) =>
+  api.post('/auth/register', { name, mobile, countryCode, businessName });
 export const sendOtp = (mobile: string, countryCode = '+91') =>
   api.post('/auth/send-otp', { mobile, countryCode });
 export const verifyOtp = (mobile: string, otp: string, sessionId: string, countryCode = '+91') =>

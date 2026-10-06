@@ -19,15 +19,96 @@ const generateTokens = (userId) => {
   return { accessToken, refreshToken };
 };
 
+// POST /auth/register
+const register = async (req, res) => {
+  try {
+    const { name, mobile, countryCode = '+91', businessName } = req.body;
+
+    if (!name || !String(name).trim()) {
+      return errorResponse(res, 'Name is required', 'VALIDATION_ERROR');
+    }
+    if (!mobile || !String(mobile).trim()) {
+      return errorResponse(res, 'Mobile number is required', 'VALIDATION_ERROR');
+    }
+
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      return errorResponse(res, 'Valid 10-digit mobile number is required', 'VALIDATION_ERROR');
+    }
+
+    // Check if user already exists
+    const [existing] = await pool.execute('SELECT id FROM users WHERE mobile = ?', [cleanMobile]);
+    if (existing.length > 0) {
+      return errorResponse(
+        res,
+        'Mobile number is already registered. Please login.',
+        'ALREADY_REGISTERED',
+        null,
+        409
+      );
+    }
+
+    const userId = `usr_${Date.now()}`;
+    const trimmedName = String(name).trim();
+    const bName = (businessName && String(businessName).trim()) ? String(businessName).trim() : `${trimmedName} Trading Co.`;
+
+    await pool.execute(
+      'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
+      [userId, cleanMobile, countryCode, trimmedName, bName, 'OWNER']
+    );
+
+    console.log(`[AUTH] User registered successfully: ${trimmedName} (${cleanMobile})`);
+
+    return successResponse(
+      res,
+      {
+        user: {
+          id: userId,
+          name: trimmedName,
+          mobile: cleanMobile,
+          countryCode,
+          businessName: bName,
+          role: 'OWNER',
+        },
+      },
+      'Registration successful! Please login with your mobile number.',
+      201
+    );
+  } catch (err) {
+    console.error('register error:', err);
+    return errorResponse(res, 'Registration failed', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
 // POST /auth/send-otp
 const sendOtp = async (req, res) => {
   try {
     const { mobile, countryCode = '+91' } = req.body;
     if (!mobile) return errorResponse(res, 'Mobile number is required', 'VALIDATION_ERROR');
 
-    // Check if user exists
-    const [users] = await pool.execute('SELECT id FROM users WHERE mobile = ?', [mobile]);
-    const isNewUser = users.length === 0;
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
+    }
+
+    // Check if user exists in database
+    const [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
+    
+    // If user not found in database: show message please register first
+    if (users.length === 0) {
+      return errorResponse(
+        res,
+        'User not registered. Please register first.',
+        'NOT_REGISTERED',
+        'This mobile number is not registered in the system. Please register first.',
+        404
+      );
+    }
+
+    const user = users[0];
+    if (user.is_active === 0 || user.is_active === false) {
+      return errorResponse(res, 'Your account is disabled. Please contact admin.', 'ACCOUNT_DISABLED', null, 403);
+    }
 
     // Use MOCK_OTP if specified, otherwise generate 6-digit random code
     const otp = process.env.MOCK_OTP || (process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : '123456');
@@ -36,22 +117,22 @@ const sendOtp = async (req, res) => {
     const expiresAt = new Date(Date.now() + OTP_EXPIRY * 1000);
 
     // Invalidate old sessions for this mobile
-    await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [mobile]);
+    await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [cleanMobile]);
 
     await pool.execute(
       'INSERT INTO otp_sessions (id, session_id, mobile, country_code, otp_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [uuidv4(), sessionId, mobile, countryCode, otpHash, expiresAt]
+      [uuidv4(), sessionId, cleanMobile, countryCode, otpHash, expiresAt]
     );
 
     // Log OTP so it can always be checked in server/docker logs
-    console.log(`[OTP] Generated for ${mobile}: ${otp}`);
+    console.log(`[OTP] Generated for ${cleanMobile}: ${otp}`);
 
     return successResponse(res, {
       sessionId,
       expiresInSeconds: OTP_EXPIRY,
       resendCooldownSeconds: COOLDOWN,
-      isNewUser,
-    }, `OTP sent successfully to ${countryCode} ${mobile}`);
+      isNewUser: false,
+    }, `OTP sent successfully to ${countryCode} ${cleanMobile}`);
   } catch (err) {
     console.error('sendOtp error:', err);
     return errorResponse(res, 'Failed to send OTP', 'SERVER_ERROR', err.message, 500);
@@ -91,18 +172,16 @@ const verifyOtp = async (req, res) => {
 
     await pool.execute('UPDATE otp_sessions SET is_verified = TRUE WHERE session_id = ?', [sessionId]);
 
-    // Get or create user
-    let [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [mobile]);
-    let user;
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    // Fetch registered user
+    let [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);
     if (!users.length) {
-      const newId = `usr_${Date.now()}`;
-      await pool.execute(
-        'INSERT INTO users (id, mobile, country_code, name, role) VALUES (?, ?, ?, ?, ?)',
-        [newId, mobile, countryCode, mobile, 'OWNER']
-      );
-      [users] = await pool.execute('SELECT * FROM users WHERE id = ?', [newId]);
+      return errorResponse(res, 'User not registered. Please register first.', 'NOT_REGISTERED', null, 404);
     }
-    user = users[0];
+    const user = users[0];
+    if (user.is_active === 0 || user.is_active === false) {
+      return errorResponse(res, 'Account is disabled. Please contact admin.', 'ACCOUNT_DISABLED', null, 403);
+    }
 
     const { accessToken, refreshToken } = generateTokens(user.id);
     const refreshExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -142,9 +221,15 @@ const resendOtp = async (req, res) => {
     if (!mobile || !sessionId)
       return errorResponse(res, 'mobile and sessionId are required', 'VALIDATION_ERROR');
 
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    const [users] = await pool.execute('SELECT id, is_active FROM users WHERE mobile = ?', [cleanMobile]);
+    if (!users.length) {
+      return errorResponse(res, 'User not registered. Please register first.', 'NOT_REGISTERED', null, 404);
+    }
+
     const [sessions] = await pool.execute(
       'SELECT * FROM otp_sessions WHERE session_id = ? AND mobile = ?',
-      [sessionId, mobile]
+      [sessionId, cleanMobile]
     );
     if (!sessions.length) return errorResponse(res, 'Invalid session', 'INVALID_SESSION', null, 401);
 
@@ -155,7 +240,7 @@ const resendOtp = async (req, res) => {
       return errorResponse(res, `Please wait ${secondsLeft} seconds before resending`, 'COOLDOWN_ACTIVE', null, 429);
     }
 
-    const otp = process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : MOCK_OTP;
+    const otp = process.env.MOCK_OTP || (process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : '123456');
     const otpHash = await bcrypt.hash(otp, 8);
     const newSessionId = generateSessionId();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY * 1000);
@@ -163,10 +248,10 @@ const resendOtp = async (req, res) => {
     await pool.execute('DELETE FROM otp_sessions WHERE session_id = ?', [sessionId]);
     await pool.execute(
       'INSERT INTO otp_sessions (id, session_id, mobile, country_code, otp_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
-      [uuidv4(), newSessionId, mobile, countryCode, otpHash, expiresAt]
+      [uuidv4(), newSessionId, cleanMobile, countryCode, otpHash, expiresAt]
     );
 
-    if (process.env.NODE_ENV !== 'production') console.log(`[DEV] Resend OTP for ${mobile}: ${otp}`);
+    console.log(`[OTP] Resend generated for ${cleanMobile}: ${otp}`);
 
     return successResponse(res, {
       sessionId: newSessionId,
@@ -231,4 +316,4 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { sendOtp, verifyOtp, resendOtp, refreshToken, getMe, logout };
+module.exports = { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, logout };

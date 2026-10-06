@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { sendOtp, verifyOtp, resendOtp, refreshToken, getMe, logout } = require('../controllers/authController');
+const { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, logout } = require('../controllers/authController');
 const { authenticate } = require('../middleware/auth');
 
+router.post('/register', register);
 router.post('/send-otp', sendOtp);
 router.post('/verify-otp', verifyOtp);
 router.post('/resend-otp', resendOtp);
