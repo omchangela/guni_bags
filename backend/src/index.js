@@ -19,7 +19,10 @@ const PORT = process.env.PORT || 5000;
 // ─── Security Middleware ───────────────────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
+  origin: (origin, callback) => {
+    // Permissive CORS to allow frontend from any domain, local dev, or VPS IP
+    callback(null, true);
+  },
   credentials: true,
 }));
 
@@ -27,12 +30,12 @@ app.use(cors({
 const isDev = process.env.NODE_ENV !== 'production';
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 min
-  max: isDev ? 50000 : 1000,
+  max: isDev ? 50000 : 5000,
   message: { success: false, message: 'Too many requests', error: { code: 'RATE_LIMIT_EXCEEDED' } },
 });
 const otpLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 min
-  max: isDev ? 60 : 5,
+  max: isDev ? 60 : 30,
   message: { success: false, message: 'Too many OTP requests', error: { code: 'OTP_RATE_LIMIT' } },
 });
 
@@ -41,9 +44,17 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ success: true, message: 'Gunny Bags Manager API is running', version: '1.0.0', timestamp: new Date().toISOString() });
-});
+const healthHandler = (req, res) => {
+  res.json({
+    success: true,
+    message: 'Gunny Bags Manager API is running',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+};
+app.get('/health', healthHandler);
+app.get('/api/v1/health', healthHandler);
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 const API_PREFIX = '/api/v1';
