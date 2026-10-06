@@ -53,7 +53,8 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(user));
       router.push('/');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Invalid OTP');
+      const msg = err.response?.data?.message || err.response?.data?.error?.details || 'Invalid OTP. Default OTP is 123456';
+      setError(msg);
     } finally { setLoading(false); }
   };
 
@@ -157,14 +158,24 @@ export default function LoginPage() {
                   <Shield size={18} style={{ color: '#10b981' }} />
                   <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--text-primary)' }}>Enter OTP</span>
                 </div>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
                   OTP sent to <strong style={{ color: 'var(--text-primary)' }}>+91 {mobile}</strong>
                 </p>
+
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  padding: '8px 12px', background: 'rgba(99,102,241,0.08)', borderRadius: 10,
+                  marginBottom: 16, border: '1px solid rgba(99,102,241,0.25)'
+                }}>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Master OTP:</span>
+                  <code style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: 2 }}>123456</code>
+                </div>
+
                 <input
                   id="otp-input"
                   type="text"
                   maxLength={6}
-                  placeholder="______"
+                  placeholder="123456"
                   value={otp}
                   onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setError(''); }}
                   className="form-input"

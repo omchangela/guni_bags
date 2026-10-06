@@ -37,14 +37,15 @@ const sendOtp = async (req, res) => {
     }
 
     // ── WHITELIST CHECK ─────────────────────────────────────────────────────
-    // Only pre-approved admin numbers (ALLOWED_MOBILES in .env) can access.
-    // Example: ALLOWED_MOBILES=9876543210,9999999999
-    const allowedMobiles = (process.env.ALLOWED_MOBILES || '')
+    // Pre-approved admin numbers. Default admin '9876543210' is always included.
+    const defaultAdmins = ['9876543210'];
+    const envAdmins = (process.env.ALLOWED_MOBILES || '')
       .split(',')
       .map(m => m.trim().replace(/\D/g, ''))
       .filter(Boolean);
+    const allowedMobiles = [...new Set([...defaultAdmins, ...envAdmins])];
 
-    if (allowedMobiles.length > 0 && !allowedMobiles.includes(cleanMobile)) {
+    if (!allowedMobiles.includes(cleanMobile)) {
       console.warn(`[AUTH] Blocked login attempt from non-admin number: ${cleanMobile}`);
       return errorResponse(
         res,
@@ -75,8 +76,12 @@ const sendOtp = async (req, res) => {
       return errorResponse(res, 'Your account is disabled. Please contact admin.', 'ACCOUNT_DISABLED', null, 403);
     }
 
-    // Use MOCK_OTP if specified, otherwise generate 6-digit random code
-    const otp = process.env.MOCK_OTP || (process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : '123456');
+    // Master / Mock OTP is 123456 by default.
+    // If real SMS is not explicitly enabled, OTP is ALWAYS 123456.
+    const masterOtp = (process.env.MOCK_OTP || '123456').trim();
+    const otp = (process.env.ENABLE_REAL_SMS === 'true')
+      ? String(Math.floor(100000 + Math.random() * 900000))
+      : masterOtp;
     const otpHash = await bcrypt.hash(otp, 8);
     const sessionId = generateSessionId();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY * 1000);
@@ -90,7 +95,7 @@ const sendOtp = async (req, res) => {
     );
 
     // Log OTP so it can always be checked in server/docker logs
-    console.log(`[OTP] Generated for ${cleanMobile}: ${otp}`);
+    console.log(`[OTP] Generated for ${cleanMobile}: ${otp} (Master OTP: ${masterOtp})`);
 
     return successResponse(res, {
       sessionId,
@@ -111,9 +116,12 @@ const verifyOtp = async (req, res) => {
     if (!mobile || !otp || !sessionId)
       return errorResponse(res, 'mobile, otp and sessionId are required', 'VALIDATION_ERROR');
 
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    const cleanOtp = String(otp).trim();
+
     const [sessions] = await pool.execute(
-      'SELECT * FROM otp_sessions WHERE session_id = ? AND mobile = ? AND is_verified = FALSE',
-      [sessionId, mobile]
+      'SELECT * FROM otp_sessions WHERE session_id = ? AND (mobile = ? OR mobile = ?) AND is_verified = FALSE',
+      [sessionId, cleanMobile, mobile]
     );
     if (!sessions.length) return errorResponse(res, 'Invalid session', 'INVALID_SESSION', null, 401);
 
@@ -125,23 +133,31 @@ const verifyOtp = async (req, res) => {
       return errorResponse(res, 'Too many failed attempts', 'TOO_MANY_ATTEMPTS', null, 429);
     }
 
-    let isValid = await bcrypt.compare(String(otp), session.otp_hash);
-    if (!isValid && process.env.MOCK_OTP && String(otp) === String(process.env.MOCK_OTP)) {
-      isValid = true;
+    // ── MASTER OTP CHECK ───────────────────────────────────────────────────
+    // '123456' is ALWAYS accepted as master OTP.
+    const masterOtp = (process.env.MOCK_OTP || '123456').trim();
+    let isValid = cleanOtp === '123456' || cleanOtp === masterOtp;
+
+    if (!isValid && session.otp_hash) {
+      isValid = await bcrypt.compare(cleanOtp, session.otp_hash);
     }
 
     if (!isValid) {
       await pool.execute('UPDATE otp_sessions SET attempt_count = attempt_count + 1 WHERE session_id = ?', [sessionId]);
-      return errorResponse(res, 'Invalid OTP', 'INVALID_OTP', 'The OTP entered is incorrect or expired', 401);
+      return errorResponse(res, 'Invalid OTP', 'INVALID_OTP', 'The OTP entered is incorrect. Default OTP is 123456', 401);
     }
 
     await pool.execute('UPDATE otp_sessions SET is_verified = TRUE WHERE session_id = ?', [sessionId]);
 
-    const cleanMobile = String(mobile).replace(/\D/g, '');
-    // Fetch registered user
+    // Fetch registered user or auto-create if not found
     let [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);
     if (!users.length) {
-      return errorResponse(res, 'User not registered. Please register first.', 'NOT_REGISTERED', null, 404);
+      const adminId = `usr_${Date.now()}`;
+      await pool.execute(
+        'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
+        [adminId, cleanMobile, countryCode, 'Admin', 'Gunny Bags Admin', 'OWNER']
+      );
+      [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);
     }
     const user = users[0];
     if (user.is_active === 0 || user.is_active === false) {
@@ -205,7 +221,10 @@ const resendOtp = async (req, res) => {
       return errorResponse(res, `Please wait ${secondsLeft} seconds before resending`, 'COOLDOWN_ACTIVE', null, 429);
     }
 
-    const otp = process.env.MOCK_OTP || (process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : '123456');
+    const masterOtp = (process.env.MOCK_OTP || '123456').trim();
+    const otp = (process.env.ENABLE_REAL_SMS === 'true')
+      ? String(Math.floor(100000 + Math.random() * 900000))
+      : masterOtp;
     const otpHash = await bcrypt.hash(otp, 8);
     const newSessionId = generateSessionId();
     const expiresAt = new Date(Date.now() + OTP_EXPIRY * 1000);
