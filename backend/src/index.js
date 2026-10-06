@@ -68,15 +68,12 @@ app.use((err, req, res, next) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
-const start = async () => {
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, async () => {
+  console.log(`🚀 Gunny Bags Manager API running on http://${HOST}:${PORT}`);
+  console.log(`📖 API Base: http://${HOST}:${PORT}/api/v1`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
   await testConnection();
-  app.listen(PORT, () => {
-    console.log(`🚀 Gunny Bags Manager API running on http://localhost:${PORT}`);
-    console.log(`📖 API Base: http://localhost:${PORT}/api/v1`);
-    console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
-};
-
-start();
+});
 
 module.exports = app;
