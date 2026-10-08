@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const { testConnection } = require('./config/database');
+const { swaggerUi, swaggerDocument, swaggerUiOptions } = require('./config/swagger');
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -18,7 +19,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ─── Security Middleware ───────────────────────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false, // Allows Swagger UI inline scripts and assets
+}));
 app.use(cors({
   origin: (origin, callback) => {
     // Permissive CORS to allow frontend from any domain, local dev, or VPS IP
@@ -57,6 +60,13 @@ const healthHandler = (req, res) => {
 app.get('/health', healthHandler);
 app.get('/api/v1/health', healthHandler);
 
+// ─── Swagger Documentation ───────────────────────────────────────────────────
+app.get(['/docs.json', '/api-docs/json', '/swagger.json'], (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.json(swaggerDocument);
+});
+app.use(['/docs', '/api-docs', '/api/v1/docs'], swaggerUi.serve, swaggerUi.setup(swaggerDocument, swaggerUiOptions));
+
 // ─── API Routes ───────────────────────────────────────────────────────────────
 const API_PREFIX = '/api/v1';
 app.use(`${API_PREFIX}/auth/send-otp`, otpLimiter);
@@ -85,6 +95,7 @@ const HOST = '0.0.0.0';
 app.listen(PORT, HOST, async () => {
   console.log(`🚀 Gunny Bags Manager API running on http://${HOST}:${PORT}`);
   console.log(`📖 API Base: http://${HOST}:${PORT}/api/v1`);
+  console.log(`📚 Swagger Docs: http://${HOST}:${PORT}/docs or http://${HOST}:${PORT}/api-docs`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
   await testConnection();
 });
