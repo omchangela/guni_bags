@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { Toast, useToast, SkeletonRow, ConfirmModal } from '@/components/ui';
 import { getPayouts, addPayout, deletePayout, getEmployees } from '@/lib/api';
-import { Plus, Trash2, IndianRupee, Banknote, Smartphone, Building2 } from 'lucide-react';
+import { Plus, Trash2, IndianRupee, Banknote, Smartphone, Building2, X } from 'lucide-react';
 
 const today = () => new Date().toISOString().split('T')[0];
 const fmtCur = (n: number) => `₹${new Intl.NumberFormat('en-IN').format(n)}`;
@@ -170,35 +170,40 @@ export default function PayoutsPage() {
 
         {/* Add Modal */}
         {showModal && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)' }}>
-                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>
-                  Record Payout
-                </h2>
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>Pending balance is auto-calculated from work entries</p>
+          <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+            <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <h3 className="modal-title" style={{ margin: 0 }}>Record Payout</h3>
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4, marginBottom: 0 }}>
+                    Pending balance is auto-calculated from work entries
+                  </p>
+                </div>
+                <button type="button" className="btn-icon" onClick={() => setShowModal(false)} aria-label="Close modal">
+                  <X size={18} />
+                </button>
               </div>
-              <form onSubmit={handleSave} style={{ padding: '24px 28px' }}>
+              <form onSubmit={handleSave}>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Employee *</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Employee *</label>
                     <select className="form-input" value={form.employeeId} onChange={e => setForm(f => ({ ...f, employeeId: e.target.value }))} required>
                       <option value="">Select Employee</option>
                       {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Date *</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Date *</label>
                     <input type="date" className="form-input" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
                   </div>
                 </div>
-                <div className="mb-4">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Amount (₹) *</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">Amount (₹) *</label>
                   <input type="number" min="1" step="0.01" className="form-input" value={form.payoutAmount}
                     onChange={e => setForm(f => ({ ...f, payoutAmount: e.target.value }))} placeholder="3000" required />
                 </div>
-                <div className="mb-4">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>Payment Mode</label>
+                <div className="form-group mb-4">
+                  <label className="form-label">Payment Mode</label>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     {PAYMENT_MODES.map(m => (
                       <button key={m.value} type="button"
@@ -215,12 +220,12 @@ export default function PayoutsPage() {
                     ))}
                   </div>
                 </div>
-                <div className="mb-6">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Reference Note</label>
+                <div className="form-group mb-6">
+                  <label className="form-label">Reference Note</label>
                   <input className="form-input" value={form.referenceNote} onChange={e => setForm(f => ({ ...f, referenceNote: e.target.value }))} placeholder="Weekly payment / Advance for festival…" />
                 </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+                <div className="modal-actions" style={{ marginTop: 20 }}>
+                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                   <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Recording…' : 'Record Payout'}</button>
                 </div>
               </form>

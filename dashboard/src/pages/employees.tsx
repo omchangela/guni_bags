@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Layout from '@/components/Layout';
 import { Toast, useToast, SkeletonRow, ConfirmModal } from '@/components/ui';
 import { getEmployees, addEmployee, updateEmployee, deleteEmployee } from '@/lib/api';
-import { Plus, Search, Pencil, Trash2, UserCheck, UserX, ChevronRight } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, UserCheck, UserX, ChevronRight, X } from 'lucide-react';
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
 const fmtCur = (n: number) => `₹${new Intl.NumberFormat('en-IN').format(n)}`;
@@ -179,47 +179,50 @@ export default function EmployeesPage() {
 
         {/* Add/Edit Modal */}
         {showModal && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)' }}>
-                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>
+          <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+            <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 520 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h3 className="modal-title" style={{ margin: 0 }}>
                   {editing ? 'Edit Employee' : 'Add Employee'}
-                </h2>
+                </h3>
+                <button type="button" className="btn-icon" onClick={() => setShowModal(false)} aria-label="Close modal">
+                  <X size={18} />
+                </button>
               </div>
-              <form onSubmit={handleSave} style={{ padding: '24px 28px' }}>
+              <form onSubmit={handleSave}>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Name *</label>
-                    <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ramesh Kumar" />
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Name *</label>
+                    <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Ramesh Kumar" autoFocus required />
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Mobile</label>
-                    <input className="form-input" value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} placeholder="9876543210" maxLength={10} />
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Mobile</label>
+                    <input className="form-input" value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value.replace(/\D/g, '') }))} placeholder="9876543210" maxLength={10} />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Rate per Bag (₹)</label>
-                    <input className="form-input" type="number" step="0.5" min="0" value={form.ratePerBag}
-                      onChange={e => setForm(f => ({ ...f, ratePerBag: parseFloat(e.target.value) }))} />
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Rate per Bag (₹)</label>
+                    <input className="form-input" type="number" step="0.25" min="0" value={form.ratePerBag}
+                      onChange={e => setForm(f => ({ ...f, ratePerBag: parseFloat(e.target.value) || 0 }))} />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 24 }}>
-                    <label style={{ fontSize: 14, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingTop: 22 }}>
+                    <label style={{ fontSize: 13, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                       <input type="checkbox" checked={form.isActive} onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))} />
                       Active Employee
                     </label>
                   </div>
                 </div>
-                <div className="mb-4">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Address</label>
+                <div className="form-group">
+                  <label className="form-label">Address</label>
                   <input className="form-input" value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} placeholder="Main Bazar, Market Yard" />
                 </div>
-                <div className="mb-6">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Notes</label>
+                <div className="form-group">
+                  <label className="form-label">Notes</label>
                   <textarea className="form-input" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional notes…" rows={2} />
                 </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+                <div className="modal-actions" style={{ marginTop: 20 }}>
+                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                   <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Update' : 'Add Employee'}</button>
                 </div>
               </form>

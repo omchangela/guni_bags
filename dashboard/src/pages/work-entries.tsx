@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Layout from '@/components/Layout';
 import { Toast, useToast, SkeletonRow, ConfirmModal } from '@/components/ui';
 import { getWorkEntries, addWorkEntry, updateWorkEntry, deleteWorkEntry, getEmployees } from '@/lib/api';
-import { Plus, Search, Pencil, Trash2, Package } from 'lucide-react';
+import { Plus, Search, Pencil, Trash2, Package, X } from 'lucide-react';
 
 const today = () => new Date().toISOString().split('T')[0];
 const fmtCur = (n: number) => `₹${new Intl.NumberFormat('en-IN').format(n)}`;
@@ -199,48 +199,51 @@ export default function WorkEntriesPage() {
 
         {/* Add/Edit Modal */}
         {showModal && (
-          <div className="modal-overlay">
-            <div className="modal-content">
-              <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border)' }}>
-                <h2 style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, fontSize: 18, color: 'var(--text-primary)' }}>
+          <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+            <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: 540 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                <h3 className="modal-title" style={{ margin: 0 }}>
                   {editing ? 'Edit Work Entry' : 'Add Work Entry'}
-                </h2>
+                </h3>
+                <button type="button" className="btn-icon" onClick={() => setShowModal(false)} aria-label="Close modal">
+                  <X size={18} />
+                </button>
               </div>
-              <form onSubmit={handleSave} style={{ padding: '24px 28px' }}>
+              <form onSubmit={handleSave}>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Employee *</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Employee *</label>
                     <select className="form-input" value={form.employeeId} onChange={e => handleEmpChange(e.target.value)} required>
                       <option value="">Select Employee</option>
                       {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                     </select>
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Date *</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Date *</label>
                     <input type="date" className="form-input" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} required />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Bag Count *</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Bag Count *</label>
                     <input type="number" min="1" className="form-input" value={form.bagCount}
                       onChange={e => setForm(f => ({ ...f, bagCount: e.target.value }))} placeholder="150" required />
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Rate per Bag (₹)</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Rate per Bag (₹)</label>
                     <input type="number" step="0.5" min="0" className="form-input" value={form.ratePerBag}
                       onChange={e => setForm(f => ({ ...f, ratePerBag: e.target.value }))} placeholder="5.00" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Time (optional)</label>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Time (optional)</label>
                     <input type="time" className="form-input" value={form.time?.replace(/(\d{2}:\d{2}).*/, '$1')}
                       onChange={e => setForm(f => ({ ...f, time: e.target.value }))} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
                     {form.bagCount && form.ratePerBag && (
-                      <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10 }}>
+                      <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, width: '100%' }}>
                         <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Total: </span>
                         <span style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
                           ₹{(parseInt(form.bagCount || '0') * parseFloat(form.ratePerBag || '0')).toFixed(2)}
@@ -249,12 +252,12 @@ export default function WorkEntriesPage() {
                     )}
                   </div>
                 </div>
-                <div className="mb-6">
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>Notes</label>
+                <div className="form-group mb-6">
+                  <label className="form-label">Notes</label>
                   <input className="form-input" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Lot 2 stitching…" />
                 </div>
-                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                  <button type="button" className="btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
+                <div className="modal-actions" style={{ marginTop: 20 }}>
+                  <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                   <button type="submit" className="btn-primary" disabled={saving}>{saving ? 'Saving…' : editing ? 'Update' : 'Add Entry'}</button>
                 </div>
               </form>
