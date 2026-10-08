@@ -8,7 +8,35 @@
 
 ---
 
-## 1. Global Specifications
+## 1. Global Specifications & SaaS Architecture
+
+### 1.0 Multi-Tenant SaaS Hierarchy
+This backend operates as a **secure multi-tenant SaaS platform**:
+```
+┌────────────────────────────────────────────────────────────────┐
+│               Gunny Bags SaaS Backend Platform                 │
+└───────────────────────────────┬────────────────────────────────┘
+                                │
+               ┌────────────────┴────────────────┐
+               ▼                                 ▼
+    ┌─────────────────────┐           ┌─────────────────────┐
+    │ Tenant A (Business) │           │ Tenant B (Business) │
+    │ Owner: Varun        │           │ Owner: Om Patel     │
+    │ Business: Agravat   │           │ Business: Patel Co. │
+    └──────────┬──────────┘           └──────────┬──────────┘
+               │                                 │
+        ┌──────┴──────┐                   ┌──────┴──────┐
+        ▼             ▼                   ▼             ▼
+   Worker 1       Worker 2           Worker A       Worker B
+   (Ramesh)       (Suresh)           (Kailash)      (Mohan)
+        │             │                   │             │
+        ▼             ▼                   ▼             ▼
+   Work & Payouts Work & Payouts     Work & Payouts Work & Payouts
+   (Only Tenant A can view)          (Only Tenant B can view)
+```
+- **Tenants (`users`)**: Business owners register and manage their factory/business independently.
+- **Workers (`employees`)**: Created by a business owner (`created_by = user.id`), strictly isolated to that tenant.
+- **Work Entries & Payouts**: Stored with `created_by = user.id`, guaranteeing 100% data privacy between different businesses.
 
 ### 1.1 Common Request Headers
 | Header | Value | Required On | Description |
@@ -28,13 +56,13 @@
 }
 ```
 
-#### ❌ Error Response (`400`, `401`, `404`, `429`, `500`)
+#### ❌ Error Response (`400`, `401`, `403`, `404`, `409`, `429`, `500`)
 ```json
 {
   "success": false,
   "message": "Human readable error description",
   "error": {
-    "code": "VALIDATION_ERROR | NOT_FOUND | UNAUTHORIZED | RATE_LIMIT_EXCEEDED | SERVER_ERROR",
+    "code": "VALIDATION_ERROR | NOT_FOUND | UNAUTHORIZED | ALREADY_EXISTS | SERVER_ERROR",
     "details": "Additional context or field specifics"
   }
 }
@@ -42,10 +70,47 @@
 
 ---
 
-## 2. Authentication API (`/auth`)
+## 2. Authentication & SaaS Onboarding API (`/auth`)
+
+### 2.0 Register New Business / Tenant
+Creates a new independent business tenant account and sends an initial verification OTP.
+- **Endpoint:** `POST /auth/register`
+- **Auth Required:** No
+
+#### Request Body:
+```json
+{
+  "name": "Om Patel",
+  "mobile": "9988776655",
+  "businessName": "Patel Gunny Bags Traders",
+  "countryCode": "+91"
+}
+```
+
+#### Response (`200 OK`):
+```json
+{
+  "success": true,
+  "message": "Account registered! OTP sent to +91 9988776655",
+  "data": {
+    "sessionId": "sess_98fb45e4473a",
+    "expiresInSeconds": 300,
+    "resendCooldownSeconds": 60,
+    "isNewUser": true,
+    "user": {
+      "id": "usr_1791448819918",
+      "name": "Om Patel",
+      "businessName": "Patel Gunny Bags Traders",
+      "mobile": "9988776655"
+    }
+  }
+}
+```
+
+---
 
 ### 2.1 Send OTP
-Sends an OTP to the user's mobile number. In development mode, mock OTP is `123456`.
+Sends an OTP to a business owner's mobile number. In development/testing, master OTP is `123456`.
 - **Endpoint:** `POST /auth/send-otp`
 - **Auth Required:** No
 

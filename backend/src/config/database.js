@@ -59,7 +59,8 @@ async function createTables(targetPool) {
       notes TEXT,
       created_by VARCHAR(36),
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_emp_created_by (created_by)
     )`,
     `CREATE TABLE IF NOT EXISTS work_entries (
       id VARCHAR(36) PRIMARY KEY,
@@ -74,7 +75,8 @@ async function createTables(targetPool) {
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       INDEX idx_work_date (date),
-      INDEX idx_work_employee (employee_id)
+      INDEX idx_work_employee (employee_id),
+      INDEX idx_work_created_by (created_by)
     )`,
     `CREATE TABLE IF NOT EXISTS payouts (
       id VARCHAR(36) PRIMARY KEY,
@@ -88,7 +90,8 @@ async function createTables(targetPool) {
       created_by VARCHAR(36),
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       INDEX idx_payout_date (date),
-      INDEX idx_payout_employee (employee_id)
+      INDEX idx_payout_employee (employee_id),
+      INDEX idx_payout_created_by (created_by)
     )`
   ];
 

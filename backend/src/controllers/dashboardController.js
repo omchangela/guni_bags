@@ -1,29 +1,31 @@
 const { pool } = require('../config/database');
 const { successResponse, errorResponse } = require('../utils/helpers');
 
-// GET /dashboard/summary
+// GET /dashboard/summary — Live summary numbers strictly scoped to this tenant / business
 const getDashboardSummary = async (req, res) => {
   try {
+    const userId = req.user.id;
     const date = req.query.date || new Date().toISOString().split('T')[0];
 
     const [[todayWork]] = await pool.execute(
       `SELECT COALESCE(SUM(bag_count), 0) AS bags, COALESCE(SUM(total_amount), 0) AS amount, COUNT(*) AS entries_count
-       FROM work_entries WHERE date = ?`,
-      [date]
+       FROM work_entries WHERE date = ? AND created_by = ?`,
+      [date, userId]
     );
 
     const [[pendingRow]] = await pool.execute(
       `SELECT 
          COALESCE(SUM(w.total_amount), 0) - COALESCE(SUM(p.payout_amount), 0) AS total_pending
        FROM employees e
-       LEFT JOIN work_entries w ON w.employee_id = e.id
-       LEFT JOIN payouts p ON p.employee_id = e.id
-       WHERE e.is_active = TRUE`
+       LEFT JOIN work_entries w ON w.employee_id = e.id AND w.created_by = ?
+       LEFT JOIN payouts p ON p.employee_id = e.id AND p.created_by = ?
+       WHERE e.created_by = ? AND e.is_active = TRUE`,
+      [userId, userId, userId]
     );
 
     const [[activeWorkers]] = await pool.execute(
-      `SELECT COUNT(DISTINCT employee_id) AS count FROM work_entries WHERE date = ?`,
-      [date]
+      `SELECT COUNT(DISTINCT employee_id) AS count FROM work_entries WHERE date = ? AND created_by = ?`,
+      [date, userId]
     );
 
     return successResponse(res, {
@@ -40,31 +42,32 @@ const getDashboardSummary = async (req, res) => {
   }
 };
 
-// GET /reports/daily?date=YYYY-MM-DD
+// GET /reports/daily?date=YYYY-MM-DD — Daily production report scoped to this tenant
 const getDailyReport = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { date } = req.query;
     if (!date) return errorResponse(res, 'date query parameter is required (YYYY-MM-DD)', 'VALIDATION_ERROR');
 
     const [[totals]] = await pool.execute(
-      'SELECT COALESCE(SUM(bag_count), 0) AS bags, COALESCE(SUM(total_amount), 0) AS amount FROM work_entries WHERE date = ?',
-      [date]
+      'SELECT COALESCE(SUM(bag_count), 0) AS bags, COALESCE(SUM(total_amount), 0) AS amount FROM work_entries WHERE date = ? AND created_by = ?',
+      [date, userId]
     );
 
     const [summary] = await pool.execute(
       `SELECT w.employee_id, e.name AS employee_name,
               SUM(w.bag_count) AS bags, SUM(w.total_amount) AS amount
        FROM work_entries w JOIN employees e ON e.id = w.employee_id
-       WHERE w.date = ? GROUP BY w.employee_id, e.name ORDER BY bags DESC`,
-      [date]
+       WHERE w.date = ? AND w.created_by = ? GROUP BY w.employee_id, e.name ORDER BY bags DESC`,
+      [date, userId]
     );
 
     const [entries] = await pool.execute(
       `SELECT w.id, w.employee_id, e.name AS employee_name,
               w.bag_count, w.rate_per_bag, w.total_amount, w.entry_time, w.notes
        FROM work_entries w JOIN employees e ON e.id = w.employee_id
-       WHERE w.date = ? ORDER BY w.entry_time ASC`,
-      [date]
+       WHERE w.date = ? AND w.created_by = ? ORDER BY w.entry_time ASC`,
+      [date, userId]
     );
 
     return successResponse(res, {
@@ -94,23 +97,33 @@ const getDailyReport = async (req, res) => {
   }
 };
 
-// GET /reports/employee/:employeeId
+// GET /reports/employee/:employeeId — Individual worker ledger scoped to this tenant
 const getEmployeeReport = async (req, res) => {
   try {
     const { employeeId } = req.params;
+    const userId = req.user.id;
     const { startDate, endDate } = req.query;
 
-    const [emps] = await pool.execute('SELECT * FROM employees WHERE id = ?', [employeeId]);
-    if (!emps.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
+    const [emps] = await pool.execute(
+      'SELECT * FROM employees WHERE id = ? AND created_by = ?',
+      [employeeId, userId]
+    );
+    if (!emps.length) return errorResponse(res, 'Worker not found in your business', 'NOT_FOUND', null, 404);
     const emp = emps[0];
 
-    let workSql = 'SELECT * FROM work_entries WHERE employee_id = ?';
-    let payoutSql = 'SELECT * FROM payouts WHERE employee_id = ?';
-    const workParams = [employeeId];
-    const payoutParams = [employeeId];
+    let workSql = 'SELECT * FROM work_entries WHERE employee_id = ? AND created_by = ?';
+    let payoutSql = 'SELECT * FROM payouts WHERE employee_id = ? AND created_by = ?';
+    const workParams = [employeeId, userId];
+    const payoutParams = [employeeId, userId];
 
-    if (startDate) { workSql += ' AND date >= ?'; workParams.push(startDate); payoutSql += ' AND date >= ?'; payoutParams.push(startDate); }
-    if (endDate) { workSql += ' AND date <= ?'; workParams.push(endDate); payoutSql += ' AND date <= ?'; payoutParams.push(endDate); }
+    if (startDate) {
+      workSql += ' AND date >= ?'; workParams.push(startDate);
+      payoutSql += ' AND date >= ?'; payoutParams.push(startDate);
+    }
+    if (endDate) {
+      workSql += ' AND date <= ?'; workParams.push(endDate);
+      payoutSql += ' AND date <= ?'; payoutParams.push(endDate);
+    }
     workSql += ' ORDER BY date DESC, entry_time DESC';
     payoutSql += ' ORDER BY date DESC';
 

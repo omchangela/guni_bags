@@ -44,6 +44,8 @@ export const resendOtp = (mobile: string, sessionId: string, countryCode = '+91'
 export const refreshAccessToken = (refreshToken: string) =>
   api.post('/auth/refresh-token', { refreshToken });
 export const getMe = () => api.get('/auth/me');
+export const updateProfile = (name: string, businessName?: string) =>
+  api.put('/auth/profile', { name, businessName });
 export const logout = (refreshToken: string) => api.post('/auth/logout', { refreshToken });
 
 // Employees

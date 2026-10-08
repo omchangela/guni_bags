@@ -1,11 +1,12 @@
 const { pool } = require('../config/database');
 const { successResponse, errorResponse, paginate } = require('../utils/helpers');
-const { v4: uuidv4 } = require('uuid');
 
-// GET /employees
+// GET /employees — List all workers for the authenticated tenant / business
 const getEmployees = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { isActive, search } = req.query;
+
     let sql = `
       SELECT 
         e.id, e.name, e.mobile, e.rate_per_bag, e.is_active, e.address, e.notes, e.created_at,
@@ -13,11 +14,11 @@ const getEmployees = async (req, res) => {
         COALESCE(SUM(w.total_amount), 0) AS total_earned,
         COALESCE(SUM(p.payout_amount), 0) AS total_paid
       FROM employees e
-      LEFT JOIN work_entries w ON w.employee_id = e.id
-      LEFT JOIN payouts p ON p.employee_id = e.id
-      WHERE 1=1
+      LEFT JOIN work_entries w ON w.employee_id = e.id AND w.created_by = ?
+      LEFT JOIN payouts p ON p.employee_id = e.id AND p.created_by = ?
+      WHERE e.created_by = ?
     `;
-    const params = [];
+    const params = [userId, userId, userId];
 
     if (isActive !== undefined) {
       sql += ' AND e.is_active = ?';
@@ -52,19 +53,20 @@ const getEmployees = async (req, res) => {
   }
 };
 
-// POST /employees
+// POST /employees — Add a new worker under this tenant / business
 const addEmployee = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { name, mobile, ratePerBag = 5.0, isActive = true, address = '', notes = '' } = req.body;
     if (!name) return errorResponse(res, 'Employee name is required', 'VALIDATION_ERROR');
 
     const id = `emp_${Date.now()}`;
     await pool.execute(
       'INSERT INTO employees (id, name, mobile, rate_per_bag, is_active, address, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, name, mobile || null, ratePerBag, isActive ? 1 : 0, address, notes, req.user.id]
+      [id, name, mobile || null, ratePerBag, isActive ? 1 : 0, address, notes, userId]
     );
 
-    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ? AND created_by = ?', [id, userId]);
     const e = rows[0];
     return successResponse(res, {
       id: e.id, name: e.name, mobile: e.mobile, ratePerBag: parseFloat(e.rate_per_bag),
@@ -77,11 +79,13 @@ const addEmployee = async (req, res) => {
   }
 };
 
-// GET /employees/:id
+// GET /employees/:id — Fetch a single worker (strictly scoped to this tenant)
 const getEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ?', [id]);
+    const userId = req.user.id;
+
+    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ? AND created_by = ?', [id, userId]);
     if (!rows.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
 
     const e = rows[0];
@@ -91,10 +95,10 @@ const getEmployee = async (req, res) => {
         COALESCE(SUM(w.total_amount), 0) AS total_earned,
         COALESCE(SUM(p.payout_amount), 0) AS total_paid
        FROM employees emp
-       LEFT JOIN work_entries w ON w.employee_id = emp.id
-       LEFT JOIN payouts p ON p.employee_id = emp.id
-       WHERE emp.id = ?`,
-      [id]
+       LEFT JOIN work_entries w ON w.employee_id = emp.id AND w.created_by = ?
+       LEFT JOIN payouts p ON p.employee_id = emp.id AND p.created_by = ?
+       WHERE emp.id = ? AND emp.created_by = ?`,
+      [userId, userId, id, userId]
     );
 
     return successResponse(res, {
@@ -112,18 +116,19 @@ const getEmployee = async (req, res) => {
   }
 };
 
-// PUT /employees/:id
+// PUT /employees/:id — Update worker details
 const updateEmployee = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
     const { name, mobile, ratePerBag, isActive, address, notes } = req.body;
 
-    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ?', [id]);
-    if (!existing.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
+    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ? AND created_by = ?', [id, userId]);
+    if (!existing.length) return errorResponse(res, 'Employee not found in your business', 'NOT_FOUND', null, 404);
 
     await pool.execute(
-      'UPDATE employees SET name=?, mobile=?, rate_per_bag=?, is_active=?, address=?, notes=? WHERE id=?',
-      [name, mobile || null, ratePerBag, isActive ? 1 : 0, address || '', notes || '', id]
+      'UPDATE employees SET name=?, mobile=?, rate_per_bag=?, is_active=?, address=?, notes=? WHERE id=? AND created_by=?',
+      [name, mobile || null, ratePerBag, isActive ? 1 : 0, address || '', notes || '', id, userId]
     );
 
     // If deactivated, sync user table and delete active sessions for this mobile
@@ -138,7 +143,7 @@ const updateEmployee = async (req, res) => {
       }
     }
 
-    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ?', [id]);
+    const [rows] = await pool.execute('SELECT * FROM employees WHERE id = ? AND created_by = ?', [id, userId]);
     const e = rows[0];
     return successResponse(res, {
       id: e.id, name: e.name, mobile: e.mobile, ratePerBag: parseFloat(e.rate_per_bag),
@@ -149,15 +154,17 @@ const updateEmployee = async (req, res) => {
   }
 };
 
-// DELETE /employees/:id
+// DELETE /employees/:id — Soft-delete / deactivate worker
 const deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ?', [id]);
-    if (!existing.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
+    const userId = req.user.id;
+
+    const [existing] = await pool.execute('SELECT id, mobile FROM employees WHERE id = ? AND created_by = ?', [id, userId]);
+    if (!existing.length) return errorResponse(res, 'Employee not found in your business', 'NOT_FOUND', null, 404);
 
     // Soft delete: set is_active = false
-    await pool.execute('UPDATE employees SET is_active = FALSE WHERE id = ?', [id]);
+    await pool.execute('UPDATE employees SET is_active = FALSE WHERE id = ? AND created_by = ?', [id, userId]);
 
     if (existing[0].mobile) {
       const cleanMobile = String(existing[0].mobile).replace(/\D/g, '');
@@ -165,7 +172,7 @@ const deleteEmployee = async (req, res) => {
       await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [cleanMobile]);
     }
 
-    return successResponse(res, null, 'Employee deleted/deactivated successfully');
+    return successResponse(res, null, 'Employee deactivated successfully');
   } catch (err) {
     return errorResponse(res, 'Failed to delete employee', 'SERVER_ERROR', err.message, 500);
   }

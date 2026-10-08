@@ -1,9 +1,10 @@
 const { pool } = require('../config/database');
 const { successResponse, errorResponse, paginate, formatTimeForDB, formatTimeForDisplay } = require('../utils/helpers');
 
-// GET /work-entries
+// GET /work-entries — Fetch daily work entries scoped to this tenant / business
 const getWorkEntries = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { date, employeeId, startDate, endDate, page, limit } = req.query;
     const { page: p, limit: l, offset } = paginate(page, limit);
 
@@ -12,9 +13,9 @@ const getWorkEntries = async (req, res) => {
              w.bag_count, w.rate_per_bag, w.total_amount, w.entry_time, w.notes
       FROM work_entries w
       JOIN employees e ON e.id = w.employee_id
-      WHERE 1=1
+      WHERE w.created_by = ?
     `;
-    const params = [];
+    const params = [userId];
 
     if (date) { sql += ' AND w.date = ?'; params.push(date); }
     if (employeeId) { sql += ' AND w.employee_id = ?'; params.push(employeeId); }
@@ -59,19 +60,24 @@ const getWorkEntries = async (req, res) => {
   }
 };
 
-// POST /work-entries
+// POST /work-entries — Add a work entry for a worker under this tenant
 const addWorkEntry = async (req, res) => {
   try {
+    const userId = req.user.id;
     const { employeeId, date, ratePerBag, time, notes = '' } = req.body;
     const bagCount = req.body.bagCount ?? req.body.bagsCompleted ?? req.body.bagsCount;
     if (!employeeId || !date || bagCount === undefined || bagCount === null)
       return errorResponse(res, 'employeeId, date and bagCount are required', 'VALIDATION_ERROR');
     if (bagCount <= 0) return errorResponse(res, 'Bag count must be positive', 'VALIDATION_ERROR');
 
-    const [emp] = await pool.execute('SELECT id, name, rate_per_bag, is_active FROM employees WHERE id = ?', [employeeId]);
-    if (!emp.length) return errorResponse(res, 'Employee not found', 'NOT_FOUND', null, 404);
+    // Ensure worker belongs to this business owner
+    const [emp] = await pool.execute(
+      'SELECT id, name, rate_per_bag, is_active FROM employees WHERE id = ? AND created_by = ?',
+      [employeeId, userId]
+    );
+    if (!emp.length) return errorResponse(res, 'Worker not found in your business', 'NOT_FOUND', null, 404);
     if (emp[0].is_active === 0 || emp[0].is_active === false) {
-      return errorResponse(res, 'Cannot add work entry for an inactive employee. Please reactivate them first.', 'EMPLOYEE_INACTIVE', null, 400);
+      return errorResponse(res, 'Cannot add work entry for an inactive worker. Please reactivate them first.', 'EMPLOYEE_INACTIVE', null, 400);
     }
 
     const rate = ratePerBag || parseFloat(emp[0].rate_per_bag);
@@ -80,7 +86,7 @@ const addWorkEntry = async (req, res) => {
 
     await pool.execute(
       'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, employeeId, date, bagCount, rate, entryTime, notes, req.user.id]
+      [id, employeeId, date, bagCount, rate, entryTime, notes, userId]
     );
 
     return successResponse(res, {
@@ -96,25 +102,29 @@ const addWorkEntry = async (req, res) => {
   }
 };
 
-// PUT /work-entries/:id
+// PUT /work-entries/:id — Update work entry
 const updateWorkEntry = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
     const { ratePerBag, date, time, notes } = req.body;
     const bagCount = req.body.bagCount ?? req.body.bagsCompleted ?? req.body.bagsCount;
 
-    const [existing] = await pool.execute('SELECT id FROM work_entries WHERE id = ?', [id]);
-    if (!existing.length) return errorResponse(res, 'Work entry not found', 'NOT_FOUND', null, 404);
+    const [existing] = await pool.execute(
+      'SELECT id FROM work_entries WHERE id = ? AND created_by = ?',
+      [id, userId]
+    );
+    if (!existing.length) return errorResponse(res, 'Work entry not found in your business', 'NOT_FOUND', null, 404);
 
     const entryTime = formatTimeForDB(time);
     await pool.execute(
-      'UPDATE work_entries SET bag_count=?, rate_per_bag=?, date=?, entry_time=?, notes=? WHERE id=?',
-      [bagCount, ratePerBag, date, entryTime, notes || '', id]
+      'UPDATE work_entries SET bag_count=?, rate_per_bag=?, date=?, entry_time=?, notes=? WHERE id=? AND created_by=?',
+      [bagCount, ratePerBag, date, entryTime, notes || '', id, userId]
     );
 
     const [rows] = await pool.execute(
-      'SELECT w.*, e.name AS employee_name FROM work_entries w JOIN employees e ON e.id = w.employee_id WHERE w.id = ?',
-      [id]
+      'SELECT w.*, e.name AS employee_name FROM work_entries w JOIN employees e ON e.id = w.employee_id WHERE w.id = ? AND w.created_by = ?',
+      [id, userId]
     );
     const r = rows[0];
     return successResponse(res, {
@@ -129,13 +139,19 @@ const updateWorkEntry = async (req, res) => {
   }
 };
 
-// DELETE /work-entries/:id
+// DELETE /work-entries/:id — Delete work entry
 const deleteWorkEntry = async (req, res) => {
   try {
     const { id } = req.params;
-    const [existing] = await pool.execute('SELECT id FROM work_entries WHERE id = ?', [id]);
-    if (!existing.length) return errorResponse(res, 'Work entry not found', 'NOT_FOUND', null, 404);
-    await pool.execute('DELETE FROM work_entries WHERE id = ?', [id]);
+    const userId = req.user.id;
+
+    const [existing] = await pool.execute(
+      'SELECT id FROM work_entries WHERE id = ? AND created_by = ?',
+      [id, userId]
+    );
+    if (!existing.length) return errorResponse(res, 'Work entry not found in your business', 'NOT_FOUND', null, 404);
+
+    await pool.execute('DELETE FROM work_entries WHERE id = ? AND created_by = ?', [id, userId]);
     return successResponse(res, null, 'Work entry deleted successfully');
   } catch (err) {
     return errorResponse(res, 'Failed to delete work entry', 'SERVER_ERROR', err.message, 500);

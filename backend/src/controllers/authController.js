@@ -19,10 +19,74 @@ const generateTokens = (userId) => {
   return { accessToken, refreshToken };
 };
 
-// Public registration is DISABLED — this is a closed admin panel.
-// Admin numbers are pre-seeded in the database and controlled via ALLOWED_MOBILES in .env.
+// POST /auth/register
+// SaaS Business Onboarding: New business owner registers with Name, Business Name, Mobile
 const register = async (req, res) => {
-  return errorResponse(res, 'Registration is not allowed. This is a closed admin system.', 'REGISTRATION_DISABLED', null, 403);
+  try {
+    const { name, mobile, businessName = '', countryCode = '+91' } = req.body;
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Full name is required', 'VALIDATION_ERROR');
+    }
+    if (!mobile) {
+      return errorResponse(res, 'Mobile number is required', 'VALIDATION_ERROR');
+    }
+
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
+    }
+
+    // Check if user already exists
+    let [existingUsers] = await pool.execute('SELECT id, is_active FROM users WHERE mobile = ?', [cleanMobile]);
+    if (existingUsers.length > 0) {
+      if (!existingUsers[0].is_active) {
+        return errorResponse(res, 'Your account is disabled. Please contact support.', 'ACCOUNT_DISABLED', null, 403);
+      }
+      return errorResponse(res, 'An account with this mobile number already exists. Please sign in.', 'ALREADY_EXISTS', null, 409);
+    }
+
+    // Create the new tenant / business account
+    const userId = `usr_${Date.now()}`;
+    const cleanBusinessName = (businessName && businessName.trim()) || `${name.trim()}'s Gunny Bags`;
+    await pool.execute(
+      'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
+      [userId, cleanMobile, countryCode, name.trim(), cleanBusinessName, 'OWNER']
+    );
+
+    // Generate OTP for initial verification
+    const masterOtp = (process.env.MOCK_OTP || '123456').trim();
+    const otp = (process.env.ENABLE_REAL_SMS === 'true')
+      ? String(Math.floor(100000 + Math.random() * 900000))
+      : masterOtp;
+    const otpHash = await bcrypt.hash(otp, 8);
+    const sessionId = generateSessionId();
+    const expiresAt = new Date(Date.now() + OTP_EXPIRY * 1000);
+
+    // Invalidate old sessions for this mobile
+    await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [cleanMobile]);
+    await pool.execute(
+      'INSERT INTO otp_sessions (id, session_id, mobile, country_code, otp_hash, expires_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [uuidv4(), sessionId, cleanMobile, countryCode, otpHash, expiresAt]
+    );
+
+    console.log(`[AUTH] Registered new SaaS tenant: ${name.trim()} (${cleanMobile}) - OTP: ${otp}`);
+
+    return successResponse(res, {
+      sessionId,
+      expiresInSeconds: OTP_EXPIRY,
+      resendCooldownSeconds: COOLDOWN,
+      isNewUser: true,
+      user: {
+        id: userId,
+        name: name.trim(),
+        businessName: cleanBusinessName,
+        mobile: cleanMobile,
+      }
+    }, `Account registered! OTP sent to ${countryCode} ${cleanMobile}`);
+  } catch (err) {
+    console.error('register error:', err);
+    return errorResponse(res, 'Failed to register', 'SERVER_ERROR', err.message, 500);
+  }
 };
 
 // POST /auth/send-otp
@@ -36,25 +100,6 @@ const sendOtp = async (req, res) => {
       return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
     }
 
-    // ── WHITELIST CHECK ─────────────────────────────────────────────────────
-    // Pre-approved admin numbers. Default admin '9876543210' is always included.
-    const defaultAdmins = ['9876543210'];
-    const envAdmins = (process.env.ALLOWED_MOBILES || '')
-      .split(',')
-      .map(m => m.trim().replace(/\D/g, ''))
-      .filter(Boolean);
-    const allowedMobiles = [...new Set([...defaultAdmins, ...envAdmins])];
-
-    if (!allowedMobiles.includes(cleanMobile)) {
-      console.warn(`[AUTH] Blocked login attempt from non-admin number: ${cleanMobile}`);
-      return errorResponse(
-        res,
-        'Access denied. This system is restricted to authorized administrators only.',
-        'ACCESS_DENIED',
-        null,
-        403
-      );
-    }
     // ── INACTIVE EMPLOYEE CHECK ─────────────────────────────────────────────
     // If this mobile belongs to an employee who is marked inactive, block login immediately
     const [inactiveEmployees] = await pool.execute(
@@ -73,23 +118,15 @@ const sendOtp = async (req, res) => {
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    // Check if user exists in database (auto-create admin if in whitelist but not in DB)
+    // Check if user exists in database
     let [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
+    const isNewUser = users.length === 0;
 
-    if (users.length === 0) {
-      // Auto-create the admin account on first login (no manual registration needed)
-      const adminId = `usr_${Date.now()}`;
-      await pool.execute(
-        'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
-        [adminId, cleanMobile, countryCode, 'Admin', 'Gunny Bags Admin', 'OWNER']
-      );
-      console.log(`[AUTH] Admin account auto-created for: ${cleanMobile}`);
-      [users] = await pool.execute('SELECT id, is_active, name FROM users WHERE mobile = ?', [cleanMobile]);
-    }
-
-    const user = users[0];
-    if (user.is_active === 0 || user.is_active === false) {
-      return errorResponse(res, 'Your account is disabled. Please contact admin.', 'ACCOUNT_DISABLED', null, 403);
+    if (!isNewUser) {
+      const user = users[0];
+      if (user.is_active === 0 || user.is_active === false) {
+        return errorResponse(res, 'Your account is disabled. Please contact admin.', 'ACCOUNT_DISABLED', null, 403);
+      }
     }
 
     // Master / Mock OTP is 123456 by default.
@@ -117,7 +154,7 @@ const sendOtp = async (req, res) => {
       sessionId,
       expiresInSeconds: OTP_EXPIRY,
       resendCooldownSeconds: COOLDOWN,
-      isNewUser: false,
+      isNewUser,
     }, `OTP sent successfully to ${countryCode} ${cleanMobile}`);
   } catch (err) {
     console.error('sendOtp error:', err);
@@ -128,7 +165,7 @@ const sendOtp = async (req, res) => {
 // POST /auth/verify-otp
 const verifyOtp = async (req, res) => {
   try {
-    const { mobile, countryCode = '+91', otp, sessionId } = req.body;
+    const { mobile, countryCode = '+91', otp, sessionId, name, businessName } = req.body;
     if (!mobile || !otp || !sessionId)
       return errorResponse(res, 'mobile, otp and sessionId are required', 'VALIDATION_ERROR');
 
@@ -174,13 +211,15 @@ const verifyOtp = async (req, res) => {
       return errorResponse(res, 'This account is currently deactivated. Please contact the administrator.', 'ACCOUNT_DISABLED', null, 403);
     }
 
-    // Fetch registered user or auto-create if not found
+    // Fetch registered user or auto-create if new tenant
     let [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);
     if (!users.length) {
       const adminId = `usr_${Date.now()}`;
+      const defaultName = (name && name.trim()) || 'Business Owner';
+      const defaultBusiness = (businessName && businessName.trim()) || `${defaultName}'s Gunny Bags`;
       await pool.execute(
         'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, TRUE)',
-        [adminId, cleanMobile, countryCode, 'Admin', 'Gunny Bags Admin', 'OWNER']
+        [adminId, cleanMobile, countryCode, defaultName, defaultBusiness, 'OWNER']
       );
       [users] = await pool.execute('SELECT * FROM users WHERE mobile = ?', [cleanMobile]);
     }
@@ -312,6 +351,26 @@ const getMe = async (req, res) => {
   });
 };
 
+// PUT /auth/profile
+const updateProfile = async (req, res) => {
+  try {
+    const { name, businessName } = req.body;
+    const userId = req.user.id;
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Name is required', 'VALIDATION_ERROR');
+    }
+    const cleanBusiness = (businessName && businessName.trim()) || req.user.business_name;
+    await pool.execute(
+      'UPDATE users SET name = ?, business_name = ? WHERE id = ?',
+      [name.trim(), cleanBusiness, userId]
+    );
+    const [rows] = await pool.execute('SELECT id, mobile, name, business_name, role FROM users WHERE id = ?', [userId]);
+    return successResponse(res, rows[0], 'Profile updated successfully');
+  } catch (err) {
+    return errorResponse(res, 'Failed to update profile', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
 // POST /auth/logout
 const logout = async (req, res) => {
   try {
@@ -325,4 +384,4 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, logout };
+module.exports = { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, updateProfile, logout };
