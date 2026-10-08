@@ -61,7 +61,7 @@ app.get('/health', healthHandler);
 app.get('/api/v1/health', healthHandler);
 
 // ─── Swagger Documentation ───────────────────────────────────────────────────
-app.get(['/docs.json', '/api-docs/json', '/swagger.json'], (req, res) => {
+app.get(['/docs.json', '/api-docs/json', '/swagger.json', '/api/v1/docs.json', '/api/v1/swagger.json'], (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.json(swaggerDocument);
 });
