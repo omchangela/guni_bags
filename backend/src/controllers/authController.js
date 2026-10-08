@@ -375,7 +375,8 @@ const updateProfile = async (req, res) => {
 // Restrict login to Master Super Admin with admin@admin.com & password
 const adminLogin = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const email = req.body.email || req.body.identifier;
+    const { password } = req.body;
     if (!email || !password) {
       return errorResponse(res, 'Email and password are required', 'VALIDATION_ERROR');
     }

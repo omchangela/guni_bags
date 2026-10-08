@@ -332,9 +332,9 @@ Click **Authorize** at the top right to set your token once for all test request
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['identifier', 'password'],
+                required: ['email', 'password'],
                 properties: {
-                  identifier: { type: 'string', example: 'admin@admin.com' },
+                  email: { type: 'string', example: 'admin@admin.com' },
                   password: { type: 'string', example: '123456' },
                 },
               },
