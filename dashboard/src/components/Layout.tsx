@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   LayoutDashboard, Users, ClipboardList, Wallet,
-  BarChart3, LogOut, Menu, X, Package2, ChevronRight, User
+  BarChart3, LogOut, Menu, X, Package2, ChevronRight, User, ShieldCheck
 } from 'lucide-react';
 
 const navItems = [
@@ -17,7 +17,7 @@ const navItems = [
 export default function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [user, setUser] = useState<{ name: string; businessName: string; role: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; businessName: string; role: string; mobile?: string } | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -42,7 +42,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const currentPage = navItems.find(n => n.href === router.pathname)?.label || 'Dashboard';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.mobile === '9876543210';
+  const currentPage =
+    router.pathname === '/admin'
+      ? 'Main Admin Panel'
+      : navItems.find(n => n.href === router.pathname)?.label || 'Dashboard';
 
   return (
     <div className="dashboard-root">
@@ -87,16 +91,59 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+
+          {isSuperAdmin && (
+            <>
+              <div className="nav-section-label" style={{ marginTop: 22, color: 'var(--amber-light)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>PLATFORM ADMIN</span>
+              </div>
+              <Link
+                href="/admin"
+                className={`nav-link ${router.pathname === '/admin' ? 'active' : ''}`}
+                onClick={() => setSidebarOpen(false)}
+                style={router.pathname === '/admin' ? {
+                  background: 'rgba(245, 158, 11, 0.16)',
+                  borderLeft: '3px solid var(--amber)',
+                } : undefined}
+              >
+                <div className="nav-icon-wrap" style={{ color: 'var(--amber)' }}>
+                  <ShieldCheck size={18} />
+                </div>
+                <span className="nav-label" style={{ fontWeight: 600, color: router.pathname === '/admin' ? 'var(--amber-light)' : undefined }}>
+                  All Users & SaaS
+                </span>
+                <span style={{
+                  marginLeft: 'auto',
+                  fontSize: 10,
+                  background: 'var(--amber)',
+                  color: '#000',
+                  fontWeight: 800,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  letterSpacing: '0.5px'
+                }}>
+                  SUPER
+                </span>
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* User Card & Logout */}
         <div className="sidebar-footer">
           <div className="user-profile-badge">
-            <div className="user-avatar-circle">
-              <User size={16} />
+            <div className="user-avatar-circle" style={isSuperAdmin ? { borderColor: 'var(--amber)', background: 'rgba(245, 158, 11, 0.2)' } : undefined}>
+              {isSuperAdmin ? <ShieldCheck size={16} color="var(--amber)" /> : <User size={16} />}
             </div>
             <div className="user-details">
-              <div className="user-name">{user?.name || 'Owner'}</div>
+              <div className="user-name" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>{user?.name || 'Owner'}</span>
+                {isSuperAdmin && (
+                  <span style={{ fontSize: 9, background: 'var(--amber)', color: '#000', fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>
+                    ADMIN
+                  </span>
+                )}
+              </div>
               <div className="user-role">{user?.businessName || 'Trading Co.'}</div>
             </div>
           </div>

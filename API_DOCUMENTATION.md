@@ -642,7 +642,136 @@ Records money paid to a worker and automatically calculates previous and remaini
 
 ---
 
-## 8. cURL Testing Guide for Developers
+## 8. Super Admin Platform APIs (Multi-Tenant Control)
+
+> **Authorization:** All admin endpoints require Bearer JWT where the authenticated user has `role = 'SUPER_ADMIN'` or a mobile number defined in `SUPER_ADMIN_MOBILES` (e.g. `9876543210`). Regular tenants receive `403 Forbidden`.
+
+### 8.1 Platform-Wide KPIs
+- **Endpoint:** `GET /api/v1/admin/stats`
+- **Description:** Returns real-time aggregate statistics across all registered businesses, total workers, total bags manufactured, total wages earned, payouts made, and total pending payouts.
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": {
+    "totalTenants": 1,
+    "activeTenants": 1,
+    "newTenantsToday": 1,
+    "totalWorkers": 4,
+    "activeWorkers": 3,
+    "totalBagsCompleted": 350,
+    "totalWorkAmount": 1750,
+    "totalPayouts": 500,
+    "totalPendingPayout": 1250,
+    "totalEntries": 2
+  }
+}
+```
+
+---
+
+### 8.2 List All Registered Businesses / Tenants
+- **Endpoint:** `GET /api/v1/admin/users`
+- **Query Parameters:**
+  - `search` (optional): Filter by tenant name, business name, or mobile.
+  - `status` (optional): `active` | `inactive`.
+  - `page` (optional, default `1`).
+  - `limit` (optional, default `20`).
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "usr_1791448819918",
+      "name": "Om Patel",
+      "businessName": "Patel Gunny Traders",
+      "mobile": "9988776655",
+      "countryCode": "+91",
+      "role": "OWNER",
+      "isActive": true,
+      "workerCount": 1,
+      "totalBags": 0,
+      "totalAmount": 0,
+      "totalPaid": 0,
+      "pendingAmount": 0,
+      "createdAt": "2026-10-08T08:40:19.000Z"
+    }
+  ],
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 1,
+    "totalCount": 1
+  }
+}
+```
+
+---
+
+### 8.3 Tenant Drill-Down & Audit
+- **Endpoint:** `GET /api/v1/admin/users/:userId`
+- **Description:** Returns complete factory details for a specific tenant: their profile, summary totals, their workers list with bags made and earnings, recent 10 work entries, and recent 10 payouts.
+
+#### Response (`200 OK`)
+```json
+{
+  "success": true,
+  "message": "Operation successful",
+  "data": {
+    "tenant": {
+      "id": "usr_1791448819918",
+      "name": "Om Patel",
+      "businessName": "Patel Gunny Traders",
+      "mobile": "9988776655",
+      "countryCode": "+91",
+      "role": "OWNER",
+      "isActive": true,
+      "createdAt": "2026-10-08T08:40:19.000Z"
+    },
+    "stats": {
+      "workerCount": 1,
+      "totalBags": 0,
+      "totalEarned": 0,
+      "totalPaid": 0,
+      "pendingAmount": 0
+    },
+    "workers": [
+      {
+        "id": "emp_1791448851410",
+        "name": "Kailash Worker",
+        "mobile": "9123456789",
+        "ratePerBag": 6,
+        "isActive": true,
+        "address": "Factory Room 3",
+        "totalBags": 0,
+        "totalEarned": 0,
+        "createdAt": "2026-10-08T08:40:51.000Z"
+      }
+    ],
+    "recentWork": [],
+    "recentPayouts": []
+  }
+}
+```
+
+---
+
+### 8.4 Suspend / Reactivate Tenant Account
+- **Endpoint:** `PATCH /api/v1/admin/users/:userId/status`
+- **Body:**
+```json
+{
+  "isActive": false
+}
+```
+- **Description:** Toggles active/suspended state. If suspended (`isActive: false`), all active JWT refresh tokens and login sessions for this tenant are immediately revoked, blocking access.
+
+---
+
+## 9. cURL Testing Guide for Developers
 
 ### Step 1: Send OTP
 ```bash

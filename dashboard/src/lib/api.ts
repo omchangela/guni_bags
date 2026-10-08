@@ -79,4 +79,12 @@ export const getDailyReport = (date: string) =>
 export const getEmployeeReport = (employeeId: string, params?: Record<string, string>) =>
   api.get(`/reports/employee/${employeeId}`, { params });
 
+// Super Admin Platform APIs
+export const getPlatformStats = () => api.get('/admin/stats');
+export const getAdminUsers = (params?: { search?: string; status?: string; page?: number; limit?: number }) =>
+  api.get('/admin/users', { params });
+export const getAdminUserDetails = (userId: string) => api.get(`/admin/users/${userId}`);
+export const toggleTenantStatus = (userId: string, isActive: boolean) =>
+  api.patch(`/admin/users/${userId}/status`, { isActive });
+
 export default api;

@@ -23,7 +23,7 @@ async function createTables(targetPool) {
       country_code VARCHAR(5) NOT NULL DEFAULT '+91',
       name VARCHAR(100) NOT NULL,
       business_name VARCHAR(150),
-      role ENUM('OWNER', 'MANAGER') NOT NULL DEFAULT 'OWNER',
+      role ENUM('SUPER_ADMIN', 'OWNER', 'MANAGER') NOT NULL DEFAULT 'OWNER',
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -103,13 +103,18 @@ async function createTables(targetPool) {
     }
   }
 
+  // Safe migration for role column
+  try {
+    await targetPool.query(`ALTER TABLE users MODIFY COLUMN role ENUM('SUPER_ADMIN', 'OWNER', 'MANAGER') NOT NULL DEFAULT 'OWNER'`);
+  } catch (e) {}
+
   // Seed default admin and sample employees if empty
   try {
     const [existingUsers] = await targetPool.query('SELECT id FROM users LIMIT 1');
     if (existingUsers.length === 0) {
       await targetPool.query(`
         INSERT INTO users (id, mobile, country_code, name, business_name, role)
-        VALUES ('usr_001', '9876543210', '+91', 'Varun Agravat', 'Agravat Gunny Bags Trading Co.', 'OWNER')
+        VALUES ('usr_001', '9876543210', '+91', 'Varun Agravat', 'Agravat Gunny Bags Trading Co.', 'SUPER_ADMIN')
       `);
       console.log('✅ Demo user seeded (mobile: 9876543210)');
     }

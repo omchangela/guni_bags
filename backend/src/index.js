@@ -12,6 +12,7 @@ const employeeRoutes = require('./routes/employees');
 const workEntryRoutes = require('./routes/workEntries');
 const payoutRoutes = require('./routes/payouts');
 const dashboardRoutes = require('./routes/dashboard');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -65,6 +66,7 @@ app.use(`${API_PREFIX}/auth`, authRoutes);
 app.use(`${API_PREFIX}/employees`, employeeRoutes);
 app.use(`${API_PREFIX}/work-entries`, workEntryRoutes);
 app.use(`${API_PREFIX}/payouts`, payoutRoutes);
+app.use(`${API_PREFIX}/admin`, adminRoutes);
 app.use(`${API_PREFIX}`, dashboardRoutes);
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
