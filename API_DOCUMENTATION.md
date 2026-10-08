@@ -195,7 +195,49 @@ Validates the OTP and returns access & refresh JWT tokens.
 
 ---
 
-### 2.4 Refresh Access Token
+### 2.4 Master Admin Login (Restricted Portal)
+Exclusively restricted to the platform Super Admin. Authenticates using email and password.
+- **Endpoint:** `POST /auth/admin-login`
+- **Auth Required:** No
+- **Credentials:** `admin@admin.com` / `123456`
+
+#### Request Body:
+```json
+{
+  "email": "admin@admin.com",
+  "password": "123456"
+}
+```
+
+#### Response (`200 OK`):
+```json
+{
+  "success": true,
+  "message": "Master Admin authenticated successfully",
+  "data": {
+    "tokens": {
+      "accessToken": "eyJhbGciOiJIUzI1Ni...",
+      "refreshToken": "eyJhbGciOiJIUzI1Ni...",
+      "tokenType": "Bearer",
+      "expiresIn": 86400
+    },
+    "user": {
+      "id": "usr_001",
+      "email": "admin@admin.com",
+      "mobile": "9876543210",
+      "countryCode": "+91",
+      "name": "Platform Master Admin",
+      "businessName": "Gunny Bags SaaS Master",
+      "role": "SUPER_ADMIN",
+      "isActive": true
+    }
+  }
+}
+```
+
+---
+
+### 2.5 Refresh Access Token
 - **Endpoint:** `POST /auth/refresh-token`
 - **Auth Required:** No
 - **Request Body:**

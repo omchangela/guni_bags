@@ -42,10 +42,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     router.push('/login');
   };
 
-  const isSuperAdmin = user?.role === 'SUPER_ADMIN' || user?.mobile === '9876543210';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const currentPage =
     router.pathname === '/admin'
-      ? 'Main Admin Panel'
+      ? 'Master Admin Dashboard'
       : navItems.find(n => n.href === router.pathname)?.label || 'Dashboard';
 
   return (
@@ -64,7 +64,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="brand-info">
             <div className="brand-title">Gunny Bags</div>
-            <div className="brand-subtitle">Production Manager</div>
+            <div className="brand-subtitle">{isSuperAdmin ? 'Master SaaS Control' : 'Production Manager'}</div>
           </div>
           <button className="mobile-close-btn" onClick={() => setSidebarOpen(false)}>
             <X size={20} />
@@ -73,7 +73,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {/* Navigation */}
         <nav className="sidebar-nav">
-          <div className="nav-section-label">MAIN MENU</div>
+          <div className="nav-section-label">{isSuperAdmin ? 'TENANT VIEW' : 'MAIN MENU'}</div>
           {navItems.map(({ href, icon: Icon, label }) => {
             const isActive = router.pathname === href;
             return (
@@ -95,7 +95,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {isSuperAdmin && (
             <>
               <div className="nav-section-label" style={{ marginTop: 22, color: 'var(--amber-light)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span>PLATFORM ADMIN</span>
+                <span>MASTER DASHBOARD</span>
               </div>
               <Link
                 href="/admin"
@@ -110,7 +110,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <ShieldCheck size={18} />
                 </div>
                 <span className="nav-label" style={{ fontWeight: 600, color: router.pathname === '/admin' ? 'var(--amber-light)' : undefined }}>
-                  All Users & SaaS
+                  All Users Master Data
                 </span>
                 <span style={{
                   marginLeft: 'auto',

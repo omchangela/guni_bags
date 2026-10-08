@@ -371,6 +371,84 @@ const updateProfile = async (req, res) => {
   }
 };
 
+// POST /auth/admin-login
+// Restrict login to Master Super Admin with admin@admin.com & password
+const adminLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return errorResponse(res, 'Email and password are required', 'VALIDATION_ERROR');
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const [rows] = await pool.execute(
+      'SELECT id, email, password_hash, mobile, country_code, name, business_name, role, is_active FROM users WHERE LOWER(email) = ?',
+      [cleanEmail]
+    );
+
+    if (rows.length === 0) {
+      return errorResponse(res, 'Invalid admin email or password', 'UNAUTHORIZED', null, 401);
+    }
+
+    const adminUser = rows[0];
+
+    // Only SUPER_ADMIN allowed
+    if (adminUser.role !== 'SUPER_ADMIN') {
+      return errorResponse(res, 'Access restricted to Platform Super Admin only', 'FORBIDDEN', null, 403);
+    }
+
+    if (!adminUser.is_active) {
+      return errorResponse(res, 'Admin account has been suspended', 'FORBIDDEN', null, 403);
+    }
+
+    // Verify password
+    let passwordValid = false;
+    if (adminUser.password_hash) {
+      passwordValid = await bcrypt.compare(password, adminUser.password_hash);
+    }
+    // Fallback check for default password '123456'
+    if (!passwordValid && password === '123456' && cleanEmail === 'admin@admin.com') {
+      passwordValid = true;
+    }
+
+    if (!passwordValid) {
+      return errorResponse(res, 'Invalid admin email or password', 'UNAUTHORIZED', null, 401);
+    }
+
+    const tokens = generateTokens(adminUser.id);
+
+    // Save refresh token
+    const tokenId = `tok_${uuidv4().replace(/-/g, '').slice(0, 16)}`;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await pool.execute(
+      'INSERT INTO refresh_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)',
+      [tokenId, adminUser.id, tokens.refreshToken, expiresAt]
+    );
+
+    return successResponse(res, {
+      tokens: {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tokenType: 'Bearer',
+        expiresIn: parseInt(process.env.JWT_EXPIRES_IN) || 86400,
+      },
+      user: {
+        id: adminUser.id,
+        email: adminUser.email,
+        mobile: adminUser.mobile,
+        countryCode: adminUser.country_code,
+        name: adminUser.name,
+        businessName: adminUser.business_name,
+        role: adminUser.role,
+        isActive: !!adminUser.is_active,
+      },
+    }, 'Master Admin authenticated successfully');
+  } catch (err) {
+    console.error('adminLogin error:', err);
+    return errorResponse(res, 'Admin authentication failed', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
 // POST /auth/logout
 const logout = async (req, res) => {
   try {
@@ -384,4 +462,6 @@ const logout = async (req, res) => {
   }
 };
 
-module.exports = { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, updateProfile, logout };
+module.exports = { register, sendOtp, verifyOtp, resendOtp, refreshToken, getMe, updateProfile, logout, adminLogin };
+
+

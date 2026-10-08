@@ -146,19 +146,21 @@ export default function AdminPage() {
   const [confirmTarget, setConfirmTarget] = useState<TenantUser | null>(null);
   const [toggleLoading, setToggleLoading] = useState(false);
 
-  // Super Admin validation
+  // Master Super Admin validation (admin@admin.com only)
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (stored) {
       try {
         const u = JSON.parse(stored);
-        if (u.role !== 'SUPER_ADMIN' && u.mobile !== '9876543210') {
-          show('Access Denied: Super Admin role required', 'error');
+        if (u.role !== 'SUPER_ADMIN') {
+          show('Access Denied: Master Dashboard is restricted to Master Admin (admin@admin.com)', 'error');
           router.replace('/');
         }
       } catch {
         router.replace('/login');
       }
+    } else {
+      router.replace('/login');
     }
   }, [router, show]);
 

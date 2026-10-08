@@ -103,20 +103,60 @@ async function createTables(targetPool) {
     }
   }
 
-  // Safe migration for role column
+  // Safe migration for role, email, password_hash
   try {
     await targetPool.query(`ALTER TABLE users MODIFY COLUMN role ENUM('SUPER_ADMIN', 'OWNER', 'MANAGER') NOT NULL DEFAULT 'OWNER'`);
   } catch (e) {}
 
-  // Seed default admin and sample employees if empty
   try {
-    const [existingUsers] = await targetPool.query('SELECT id FROM users LIMIT 1');
+    await targetPool.query(`ALTER TABLE users ADD COLUMN email VARCHAR(100) UNIQUE NULL`);
+  } catch (e) {}
+
+  try {
+    await targetPool.query(`ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL`);
+  } catch (e) {}
+
+  // Ensure Master Super Admin account exists: admin@admin.com / 123456
+  try {
+    const bcrypt = require('bcryptjs');
+    const adminPassHash = bcrypt.hashSync('123456', 10);
+    const [adminCheck] = await targetPool.query('SELECT id FROM users WHERE email = "admin@admin.com" LIMIT 1');
+    if (adminCheck.length === 0) {
+      const [usr001] = await targetPool.query('SELECT id FROM users WHERE id = "usr_001" LIMIT 1');
+      if (usr001.length > 0) {
+        await targetPool.query(`
+          UPDATE users 
+          SET email = 'admin@admin.com', password_hash = ?, role = 'SUPER_ADMIN', name = 'Platform Master Admin', business_name = 'Gunny Bags SaaS Master'
+          WHERE id = 'usr_001'
+        `, [adminPassHash]);
+      } else {
+        await targetPool.query(`
+          INSERT INTO users (id, email, password_hash, mobile, country_code, name, business_name, role, is_active)
+          VALUES ('usr_admin', 'admin@admin.com', ?, '9876543210', '+91', 'Platform Master Admin', 'Gunny Bags SaaS Master', 'SUPER_ADMIN', TRUE)
+        `, [adminPassHash]);
+      }
+      console.log('✅ Master Admin account configured (admin@admin.com / 123456)');
+    } else {
+      await targetPool.query(`
+        UPDATE users 
+        SET password_hash = ?, role = 'SUPER_ADMIN', is_active = TRUE
+        WHERE email = 'admin@admin.com'
+      `, [adminPassHash]);
+      console.log('✅ Master Admin credentials verified (admin@admin.com / 123456)');
+    }
+  } catch (e) {
+    console.warn('[DB] Master admin sync notice:', e.message);
+  }
+
+  // Seed demo tenant and sample employees if empty
+  try {
+    const [existingUsers] = await targetPool.query('SELECT id FROM users WHERE role = "OWNER" LIMIT 1');
     if (existingUsers.length === 0) {
       await targetPool.query(`
         INSERT INTO users (id, mobile, country_code, name, business_name, role)
-        VALUES ('usr_001', '9876543210', '+91', 'Varun Agravat', 'Agravat Gunny Bags Trading Co.', 'SUPER_ADMIN')
+        VALUES ('usr_demo', '9988776655', '+91', 'Om Patel', 'Patel Gunny Traders', 'OWNER')
       `);
-      console.log('✅ Demo user seeded (mobile: 9876543210)');
+      console.log('✅ Demo tenant user seeded (mobile: 9988776655)');
     }
 
     const [existingEmp] = await targetPool.query('SELECT id FROM employees LIMIT 1');
@@ -124,9 +164,9 @@ async function createTables(targetPool) {
       await targetPool.query(`
         INSERT INTO employees (id, name, mobile, rate_per_bag, is_active, notes, created_by)
         VALUES 
-          ('emp_1', 'Ramesh', '9876543210', 5.00, TRUE, 'Experienced worker', 'usr_001'),
-          ('emp_2', 'Suresh', '9876543211', 5.00, TRUE, '', 'usr_001'),
-          ('emp_3', 'Dinesh', '9876543212', 5.50, TRUE, 'Stitching expert', 'usr_001')
+          ('emp_1', 'Ramesh', '9876543210', 5.00, TRUE, 'Experienced worker', 'usr_demo'),
+          ('emp_2', 'Suresh', '9876543211', 5.00, TRUE, '', 'usr_demo'),
+          ('emp_3', 'Dinesh', '9876543212', 5.50, TRUE, 'Stitching expert', 'usr_demo')
       `);
       console.log('✅ Sample employees seeded');
     }

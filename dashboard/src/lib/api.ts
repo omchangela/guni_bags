@@ -47,6 +47,8 @@ export const getMe = () => api.get('/auth/me');
 export const updateProfile = (name: string, businessName?: string) =>
   api.put('/auth/profile', { name, businessName });
 export const logout = (refreshToken: string) => api.post('/auth/logout', { refreshToken });
+export const adminLogin = (email: string, password: string) =>
+  api.post('/auth/admin-login', { email, password });
 
 // Employees
 export const getEmployees = (params?: Record<string, string>) =>
