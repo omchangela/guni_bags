@@ -813,6 +813,64 @@ Records money paid to a worker and automatically calculates previous and remaini
 
 ---
 
+### 8.5 Create Business Tenant Directly
+- **Endpoint:** `POST /api/v1/admin/users`
+- **Body:**
+```json
+{
+  "name": "Kishore Bhai",
+  "businessName": "Kishore Gunny Works",
+  "mobile": "9812345678",
+  "countryCode": "+91",
+  "role": "OWNER",
+  "isActive": true
+}
+```
+
+---
+
+### 8.6 Update Business Tenant Details
+- **Endpoint:** `PUT /api/v1/admin/users/:userId`
+- **Body:**
+```json
+{
+  "name": "Kishore Bhai Updated",
+  "businessName": "Kishore Trading Co.",
+  "mobile": "9812345678",
+  "role": "OWNER",
+  "isActive": true
+}
+```
+
+---
+
+### 8.7 Delete Business Tenant Permanently
+- **Endpoint:** `DELETE /api/v1/admin/users/:userId`
+- **Description:** Permanently deletes the tenant account and wipes all their associated workers, entries, and payouts.
+
+---
+
+### 8.8 Manage Workers for Tenant
+- **Add Worker:** `POST /api/v1/admin/users/:userId/workers`
+  - Body: `{"name":"Ramesh","mobile":"9876543210","ratePerBag":5.5,"address":"","notes":""}`
+- **Delete Worker:** `DELETE /api/v1/admin/users/:userId/workers/:workerId`
+
+---
+
+### 8.9 Manage Work Entries for Tenant
+- **Add Entry:** `POST /api/v1/admin/users/:userId/work-entries`
+  - Body: `{"employeeId":"emp_1","date":"2026-10-08","bagCount":200,"notes":""}`
+- **Delete Entry:** `DELETE /api/v1/admin/users/:userId/work-entries/:entryId`
+
+---
+
+### 8.10 Manage Payouts for Tenant
+- **Add Payout:** `POST /api/v1/admin/users/:userId/payouts`
+  - Body: `{"employeeId":"emp_1","date":"2026-10-08","payoutAmount":500,"paymentMode":"CASH","referenceNote":""}`
+- **Delete Payout:** `DELETE /api/v1/admin/users/:userId/payouts/:payoutId`
+
+---
+
 ## 9. cURL Testing Guide for Developers
 
 ### Step 1: Send OTP

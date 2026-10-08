@@ -8,6 +8,15 @@ import {
   getAdminUsers,
   getAdminUserDetails,
   toggleTenantStatus,
+  createAdminUser,
+  updateAdminUser,
+  deleteAdminUser,
+  addAdminWorker,
+  deleteAdminWorker,
+  addAdminWorkEntry,
+  deleteAdminWorkEntry,
+  addAdminPayout,
+  deleteAdminPayout,
 } from '@/lib/api';
 import {
   Building2,
@@ -16,19 +25,18 @@ import {
   IndianRupee,
   Search,
   ShieldCheck,
-  ShieldAlert,
   Eye,
   Power,
   RefreshCw,
-  Calendar,
   Phone,
   Wallet,
   ClipboardList,
-  CheckCircle2,
-  XCircle,
   X,
-  AlertTriangle,
   AlertCircle,
+  Plus,
+  Edit2,
+  Trash2,
+  Check,
 } from 'lucide-react';
 
 const fmt = (n: number | undefined | null) => new Intl.NumberFormat('en-IN').format(n || 0);
@@ -45,6 +53,7 @@ const fmtDate = (d: string | undefined) => {
     return d;
   }
 };
+const todayStr = () => new Date().toISOString().split('T')[0];
 
 interface PlatformStats {
   totalTenants: number;
@@ -136,15 +145,53 @@ export default function AdminPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
+  // Create User Modal State
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    businessName: '',
+    mobile: '',
+    role: 'OWNER',
+    isActive: true,
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
+
+  // Edit User Modal State
+  const [editingTenant, setEditingTenant] = useState<TenantUser | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    businessName: '',
+    mobile: '',
+    role: 'OWNER',
+    isActive: true,
+  });
+  const [updatingUser, setUpdatingUser] = useState(false);
+
+  // Delete User Confirm State
+  const [deleteTarget, setDeleteTarget] = useState<TenantUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+
   // Drill-down Modal State
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const [tenantDetail, setTenantDetail] = useState<TenantDetailData | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailTab, setDetailTab] = useState<'workers' | 'work' | 'payouts'>('workers');
 
+  // Resource Form States (Inside Drilldown Modal)
+  const [showAddWorkerModal, setShowAddWorkerModal] = useState(false);
+  const [workerForm, setWorkerForm] = useState({ name: '', mobile: '', ratePerBag: 5.0, address: '', notes: '' });
+  const [savingWorker, setSavingWorker] = useState(false);
+
+  const [showAddWorkModal, setShowAddWorkModal] = useState(false);
+  const [workForm, setWorkForm] = useState({ employeeId: '', date: todayStr(), bagCount: '', notes: '' });
+  const [savingWork, setSavingWork] = useState(false);
+
+  const [showAddPayoutModal, setShowAddPayoutModal] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({ employeeId: '', date: todayStr(), payoutAmount: '', paymentMode: 'CASH', referenceNote: '' });
+  const [savingPayout, setSavingPayout] = useState(false);
+
   // Status Toggle Modal State
-  const [confirmTarget, setConfirmTarget] = useState<TenantUser | null>(null);
-  const [toggleLoading, setToggleLoading] = useState(false);
+  const [confirmToggleTarget, setConfirmToggleTarget] = useState<TenantUser | null>(null);
 
   // Master Super Admin validation (admin@admin.com only)
   useEffect(() => {
@@ -223,35 +270,204 @@ export default function AdminPage() {
     }
   };
 
-  // Toggle Account Status (Suspend / Activate)
-  const handleConfirmToggle = async () => {
-    if (!confirmTarget) return;
-    setToggleLoading(true);
+  // Reload Detail
+  const reloadTenantDetail = async () => {
+    if (!selectedTenantId) return;
     try {
-      const newStatus = !confirmTarget.isActive;
-      await toggleTenantStatus(confirmTarget.id, newStatus);
-      show(`Business ${newStatus ? 'activated' : 'suspended'} successfully`);
-      setConfirmTarget(null);
+      const res = await getAdminUserDetails(selectedTenantId);
+      setTenantDetail(res.data.data);
       fetchUsers();
       fetchStats();
-      if (selectedTenantId === confirmTarget.id && tenantDetail) {
-        setTenantDetail({
-          ...tenantDetail,
-          tenant: { ...tenantDetail.tenant, isActive: newStatus },
-        });
-      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Create User
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createForm.name.trim()) { show('Full name is required', 'error'); return; }
+    if (!createForm.mobile.match(/^\d{10}$/)) { show('Enter a valid 10-digit mobile', 'error'); return; }
+    setCreatingUser(true);
+    try {
+      await createAdminUser(createForm);
+      show('Business tenant created successfully!');
+      setShowCreateModal(false);
+      setCreateForm({ name: '', businessName: '', mobile: '', role: 'OWNER', isActive: true });
+      fetchUsers();
+      fetchStats();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to create business user', 'error');
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  // Open Edit User
+  const openEditModal = (t: TenantUser) => {
+    setEditingTenant(t);
+    setEditForm({
+      name: t.name,
+      businessName: t.businessName,
+      mobile: t.mobile,
+      role: t.role,
+      isActive: t.isActive,
+    });
+  };
+
+  // Update User
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTenant) return;
+    setUpdatingUser(true);
+    try {
+      await updateAdminUser(editingTenant.id, editForm);
+      show('Business details updated successfully');
+      setEditingTenant(null);
+      fetchUsers();
+      fetchStats();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to update user', 'error');
+    } finally {
+      setUpdatingUser(false);
+    }
+  };
+
+  // Delete User
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return;
+    setDeletingUser(true);
+    try {
+      await deleteAdminUser(deleteTarget.id);
+      show('Business user and all records deleted permanently');
+      setDeleteTarget(null);
+      fetchUsers();
+      fetchStats();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to delete user', 'error');
+    } finally {
+      setDeletingUser(false);
+    }
+  };
+
+  // Toggle Account Status
+  const handleConfirmToggle = async () => {
+    if (!confirmToggleTarget) return;
+    try {
+      const newStatus = !confirmToggleTarget.isActive;
+      await toggleTenantStatus(confirmToggleTarget.id, newStatus);
+      show(`Business ${newStatus ? 'activated' : 'suspended'} successfully`);
+      setConfirmToggleTarget(null);
+      fetchUsers();
+      fetchStats();
     } catch (err: any) {
       show(err.response?.data?.message || 'Failed to update account status', 'error');
+    }
+  };
+
+  // Add Worker for Tenant
+  const handleAddWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenantId) return;
+    if (!workerForm.name.trim()) { show('Worker name is required', 'error'); return; }
+    setSavingWorker(true);
+    try {
+      await addAdminWorker(selectedTenantId, workerForm);
+      show('Worker added to business fleet');
+      setShowAddWorkerModal(false);
+      setWorkerForm({ name: '', mobile: '', ratePerBag: 5.0, address: '', notes: '' });
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to add worker', 'error');
     } finally {
-      setToggleLoading(false);
+      setSavingWorker(false);
+    }
+  };
+
+  // Delete Worker for Tenant
+  const handleDeleteWorker = async (workerId: string) => {
+    if (!selectedTenantId) return;
+    if (!confirm('Are you sure you want to delete this worker? All their entries will be removed.')) return;
+    try {
+      await deleteAdminWorker(selectedTenantId, workerId);
+      show('Worker removed successfully');
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to delete worker', 'error');
+    }
+  };
+
+  // Add Work Entry for Tenant
+  const handleAddWork = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenantId) return;
+    if (!workForm.employeeId) { show('Select a worker', 'error'); return; }
+    if (!workForm.bagCount || parseInt(workForm.bagCount) <= 0) { show('Enter valid bag count', 'error'); return; }
+    setSavingWork(true);
+    try {
+      await addAdminWorkEntry(selectedTenantId, workForm);
+      show('Work production entry recorded');
+      setShowAddWorkModal(false);
+      setWorkForm({ employeeId: '', date: todayStr(), bagCount: '', notes: '' });
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to record work entry', 'error');
+    } finally {
+      setSavingWork(false);
+    }
+  };
+
+  // Delete Work Entry for Tenant
+  const handleDeleteWork = async (entryId: string) => {
+    if (!selectedTenantId) return;
+    if (!confirm('Delete this work entry?')) return;
+    try {
+      await deleteAdminWorkEntry(selectedTenantId, entryId);
+      show('Work entry deleted');
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to delete entry', 'error');
+    }
+  };
+
+  // Add Payout for Tenant
+  const handleAddPayout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenantId) return;
+    if (!payoutForm.employeeId) { show('Select a worker', 'error'); return; }
+    if (!payoutForm.payoutAmount || parseFloat(payoutForm.payoutAmount) <= 0) { show('Enter valid payout amount', 'error'); return; }
+    setSavingPayout(true);
+    try {
+      await addAdminPayout(selectedTenantId, payoutForm);
+      show('Payout recorded successfully');
+      setShowAddPayoutModal(false);
+      setPayoutForm({ employeeId: '', date: todayStr(), payoutAmount: '', paymentMode: 'CASH', referenceNote: '' });
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to record payout', 'error');
+    } finally {
+      setSavingPayout(false);
+    }
+  };
+
+  // Delete Payout for Tenant
+  const handleDeletePayout = async (payoutId: string) => {
+    if (!selectedTenantId) return;
+    if (!confirm('Delete this payout record?')) return;
+    try {
+      await deleteAdminPayout(selectedTenantId, payoutId);
+      show('Payout record deleted');
+      reloadTenantDetail();
+    } catch (err: any) {
+      show(err.response?.data?.message || 'Failed to delete payout', 'error');
     }
   };
 
   return (
     <>
       <Head>
-        <title>Main Admin Panel — Gunny Bags SaaS</title>
-        <meta name="description" content="Super Admin Control Panel: Manage all business tenants, workers, bags produced, and financial flows." />
+        <title>Master Admin Panel — Gunny Bags SaaS</title>
+        <meta name="description" content="Master Admin Control Center: Create users, edit businesses, and manage all factory data" />
       </Head>
 
       <Layout>
@@ -259,12 +475,12 @@ export default function AdminPage() {
 
         {/* ─── HERO HEADER ─────────────────────────────────────────────────── */}
         <div style={{
-          background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.6) 0%, rgba(19, 25, 41, 0.8) 100%)',
-          border: '1px solid rgba(245, 158, 11, 0.25)',
+          background: 'linear-gradient(135deg, rgba(30, 27, 75, 0.7) 0%, rgba(19, 25, 41, 0.9) 100%)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
           borderRadius: 18,
           padding: '24px 28px',
           marginBottom: 24,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -277,22 +493,19 @@ export default function AdminPage() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 5,
-                background: 'rgba(245, 158, 11, 0.18)',
+                background: 'rgba(245, 158, 11, 0.2)',
                 color: 'var(--amber-light)',
-                border: '1px solid rgba(245, 158, 11, 0.35)',
+                border: '1px solid rgba(245, 158, 11, 0.4)',
                 fontSize: 11,
-                fontWeight: 700,
+                fontWeight: 800,
                 padding: '3px 10px',
                 borderRadius: 20,
                 letterSpacing: '0.05em',
               }}>
-                <ShieldCheck size={14} /> SUPER ADMIN CONTROL PANEL
+                <ShieldCheck size={14} /> MASTER SAAS CONTROL PANEL
               </span>
-              <span style={{
-                fontSize: 11,
-                color: 'var(--text-muted)',
-              }}>
-                • Multi-Tenant SaaS
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                • Restricted to admin@admin.com
               </span>
             </div>
             <h2 style={{
@@ -302,34 +515,50 @@ export default function AdminPage() {
               color: 'var(--text-white)',
               letterSpacing: '-0.02em',
             }}>
-              Platform Overview & Business Tenants
+              Master Platform Overview & User Management
             </h2>
             <p style={{
               fontSize: 13,
               color: 'var(--text-secondary)',
               marginTop: 4,
-              maxWidth: 680,
+              maxWidth: 700,
               lineHeight: 1.5,
             }}>
-              Master administration center. Monitor all registered businesses, view collective factory output, inspect tenant-specific work records, and manage access privileges.
+              Create and onboard new business tenants, manage factory workers, inspect real-time production, update account details, and control access platform-wide.
             </p>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="btn-primary"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                color: '#000',
+                fontWeight: 700,
+                boxShadow: '0 4px 16px rgba(245, 158, 11, 0.35)',
+              }}
+            >
+              <Plus size={16} color="#000" />
+              <span>+ Create Business User</span>
+            </button>
+
             <button
               onClick={() => { fetchStats(); fetchUsers(); }}
               className="btn-secondary"
               style={{ display: 'flex', alignItems: 'center', gap: 8 }}
             >
               <RefreshCw size={15} className={loadingStats || loadingUsers ? 'spin' : ''} />
-              <span>Refresh Platform</span>
+              <span>Refresh</span>
             </button>
           </div>
         </div>
 
         {/* ─── PLATFORM KPI CARDS ──────────────────────────────────────────── */}
         <div className="stats-overview-grid" style={{ marginBottom: 28 }}>
-          {/* Card 1: Businesses */}
           <div className="stat-card theme-amber">
             <div className="stat-card-top">
               <span className="stat-card-label">TOTAL BUSINESSES</span>
@@ -345,7 +574,6 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Card 2: Workers */}
           <div className="stat-card theme-indigo">
             <div className="stat-card-top">
               <span className="stat-card-label">TOTAL WORKERS</span>
@@ -357,11 +585,10 @@ export default function AdminPage() {
               {loadingStats ? '-' : fmt(stats?.totalWorkers)}
             </div>
             <div className="stat-card-caption">
-              {stats?.activeWorkers || 0} active workers in factories
+              {stats?.activeWorkers || 0} active in factory fleets
             </div>
           </div>
 
-          {/* Card 3: Bags */}
           <div className="stat-card theme-emerald">
             <div className="stat-card-top">
               <span className="stat-card-label">TOTAL BAGS PRODUCED</span>
@@ -373,11 +600,10 @@ export default function AdminPage() {
               {loadingStats ? '-' : fmt(stats?.totalBagsCompleted)}
             </div>
             <div className="stat-card-caption" style={{ color: 'var(--emerald-light)' }}>
-              Across {fmt(stats?.totalEntries)} logged production entries
+              Across {fmt(stats?.totalEntries)} logged entries
             </div>
           </div>
 
-          {/* Card 4: Financial Volume */}
           <div className="stat-card theme-indigo">
             <div className="stat-card-top">
               <span className="stat-card-label">TOTAL PRODUCTION VALUE</span>
@@ -389,14 +615,13 @@ export default function AdminPage() {
               {loadingStats ? '-' : fmtCur(stats?.totalWorkAmount)}
             </div>
             <div className="stat-card-caption">
-              Total earned by workers platform-wide
+              Wages earned across all factories
             </div>
           </div>
 
-          {/* Card 5: Paid Out */}
           <div className="stat-card theme-emerald">
             <div className="stat-card-top">
-              <span className="stat-card-label">TOTAL PAID TO WORKERS</span>
+              <span className="stat-card-label">TOTAL PAID OUT</span>
               <div className="stat-card-icon-badge badge-emerald">
                 <Wallet size={18} />
               </div>
@@ -405,14 +630,13 @@ export default function AdminPage() {
               {loadingStats ? '-' : fmtCur(stats?.totalPayouts)}
             </div>
             <div className="stat-card-caption" style={{ color: 'var(--emerald-light)' }}>
-              Disbursed through cash / UPI
+              Disbursed to workers
             </div>
           </div>
 
-          {/* Card 6: Pending Balance */}
           <div className="stat-card theme-rose">
             <div className="stat-card-top">
-              <span className="stat-card-label">TOTAL PENDING PAYOUTS</span>
+              <span className="stat-card-label">TOTAL PENDING BALANCE</span>
               <div className="stat-card-icon-badge badge-rose">
                 <IndianRupee size={18} />
               </div>
@@ -421,7 +645,7 @@ export default function AdminPage() {
               {loadingStats ? '-' : fmtCur(stats?.totalPendingPayout)}
             </div>
             <div className="stat-card-caption" style={{ color: 'var(--rose-light)' }}>
-              Outstanding worker wages across businesses
+              Outstanding worker wages
             </div>
           </div>
         </div>
@@ -440,10 +664,10 @@ export default function AdminPage() {
                 gap: 8,
               }}>
                 <Building2 size={20} color="var(--indigo-light)" />
-                Registered Businesses & Tenants ({users.length})
+                All Registered Businesses ({users.length})
               </h3>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>
-                Click &quot;Inspect Data&quot; to audit worker records, daily logs, and payouts for any tenant.
+                Full administrative control: Create, edit, inspect, and manage data for any tenant.
               </p>
             </div>
 
@@ -470,7 +694,7 @@ export default function AdminPage() {
                 </button>
               </div>
 
-              <div style={{ position: 'relative', minWidth: 240 }}>
+              <div style={{ position: 'relative', minWidth: 230 }}>
                 <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input
                   type="text"
@@ -489,7 +713,7 @@ export default function AdminPage() {
               <thead>
                 <tr>
                   <th>BUSINESS & OWNER</th>
-                  <th>CONTACT</th>
+                  <th>MOBILE</th>
                   <th>WORKERS</th>
                   <th>BAGS MADE</th>
                   <th>TOTAL VALUE</th>
@@ -508,7 +732,13 @@ export default function AdminPage() {
                     <td colSpan={10} style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)' }}>
                       <AlertCircle size={36} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
                       <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-secondary)' }}>No businesses found</div>
-                      <div style={{ fontSize: 13, marginTop: 4 }}>Try adjusting your search or status filter.</div>
+                      <button
+                        onClick={() => setShowCreateModal(true)}
+                        className="btn-primary btn-sm"
+                        style={{ marginTop: 14 }}
+                      >
+                        + Create First Business
+                      </button>
                     </td>
                   </tr>
                 ) : (
@@ -557,19 +787,24 @@ export default function AdminPage() {
 
                       {/* Workers */}
                       <td>
-                        <span style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '3px 9px',
-                          borderRadius: 6,
-                          background: 'rgba(99, 102, 241, 0.12)',
-                          color: '#c7d2fe',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}>
+                        <button
+                          onClick={() => handleInspectTenant(tenant.id)}
+                          style={{
+                            background: 'rgba(99, 102, 241, 0.12)',
+                            border: '1px solid rgba(99, 102, 241, 0.25)',
+                            padding: '3px 9px',
+                            borderRadius: 6,
+                            color: '#c7d2fe',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
                           <Users size={12} /> {tenant.workerCount} Workers
-                        </span>
+                        </button>
                       </td>
 
                       {/* Bags Made */}
@@ -577,7 +812,6 @@ export default function AdminPage() {
                         <div style={{ fontWeight: 600, color: 'var(--text-white)' }}>
                           {fmt(tenant.totalBags)}
                         </div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>bags</div>
                       </td>
 
                       {/* Total Value */}
@@ -626,25 +860,40 @@ export default function AdminPage() {
 
                       {/* Actions */}
                       <td style={{ textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                           <button
                             onClick={() => handleInspectTenant(tenant.id)}
                             className="btn-secondary btn-sm"
-                            style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-                            title="Inspect Tenant Data"
+                            title="Inspect & Manage Tenant Data"
                           >
                             <Eye size={13} />
                             <span>Inspect</span>
                           </button>
 
                           <button
-                            onClick={() => setConfirmTarget(tenant)}
-                            className={`btn-sm ${tenant.isActive ? 'btn-secondary' : 'btn-primary'}`}
-                            style={tenant.isActive ? { color: 'var(--rose-light)', borderColor: 'rgba(239, 68, 68, 0.3)' } : {}}
-                            title={tenant.isActive ? 'Suspend Business Account' : 'Reactivate Business Account'}
+                            onClick={() => openEditModal(tenant)}
+                            className="btn-secondary btn-sm"
+                            title="Edit Business Details"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+
+                          <button
+                            onClick={() => setConfirmToggleTarget(tenant)}
+                            className="btn-sm btn-secondary"
+                            style={tenant.isActive ? { color: 'var(--amber-light)' } : { color: 'var(--emerald-light)' }}
+                            title={tenant.isActive ? 'Suspend Business' : 'Activate Business'}
                           >
                             <Power size={13} />
-                            <span>{tenant.isActive ? 'Suspend' : 'Activate'}</span>
+                          </button>
+
+                          <button
+                            onClick={() => setDeleteTarget(tenant)}
+                            className="btn-sm btn-secondary"
+                            style={{ color: 'var(--rose-light)' }}
+                            title="Delete Business Permanently"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       </td>
@@ -656,7 +905,213 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* ─── TENANT DRILLDOWN MODAL ─────────────────────────────────────── */}
+        {/* ─── CREATE BUSINESS MODAL ───────────────────────────────────────── */}
+        {showCreateModal && (
+          <div className="modal-backdrop" onClick={() => setShowCreateModal(false)}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Building2 size={20} color="var(--amber)" />
+                  Create New Business Tenant
+                </h3>
+                <button onClick={() => setShowCreateModal(false)} className="btn-icon">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateUser}>
+                <div className="form-group">
+                  <label className="form-label">Owner Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ramesh Patel"
+                    value={createForm.name}
+                    onChange={e => setCreateForm({ ...createForm, name: e.target.value })}
+                    className="form-input"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Business / Factory Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Patel Gunny Bags Trading Co."
+                    value={createForm.businessName}
+                    onChange={e => setCreateForm({ ...createForm, businessName: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Mobile Number * (10 digits)</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-subtle)', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                      +91
+                    </div>
+                    <input
+                      type="tel"
+                      required
+                      maxLength={10}
+                      placeholder="9876543210"
+                      value={createForm.mobile}
+                      onChange={e => setCreateForm({ ...createForm, mobile: e.target.value.replace(/\D/g, '') })}
+                      className="form-input"
+                      style={{ flex: 1 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Role</label>
+                  <select
+                    value={createForm.role}
+                    onChange={e => setCreateForm({ ...createForm, role: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="OWNER">OWNER (Full Factory Access)</option>
+                    <option value="MANAGER">MANAGER (Operations Access)</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                  <input
+                    type="checkbox"
+                    id="create-active"
+                    checked={createForm.isActive}
+                    onChange={e => setCreateForm({ ...createForm, isActive: e.target.checked })}
+                  />
+                  <label htmlFor="create-active" style={{ fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    Active immediately (user can log in)
+                  </label>
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={creatingUser}>
+                    {creatingUser ? 'Creating…' : 'Create Business'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── EDIT BUSINESS MODAL ─────────────────────────────────────────── */}
+        {editingTenant && (
+          <div className="modal-backdrop" onClick={() => setEditingTenant(null)}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                <h3 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Edit2 size={18} color="var(--indigo-light)" />
+                  Edit Business Details
+                </h3>
+                <button onClick={() => setEditingTenant(null)} className="btn-icon">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateUser}>
+                <div className="form-group">
+                  <label className="form-label">Owner Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editForm.name}
+                    onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Business / Factory Name</label>
+                  <input
+                    type="text"
+                    value={editForm.businessName}
+                    onChange={e => setEditForm({ ...editForm, businessName: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Mobile Number (10 digits)</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    value={editForm.mobile}
+                    onChange={e => setEditForm({ ...editForm, mobile: e.target.value.replace(/\D/g, '') })}
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Role</label>
+                  <select
+                    value={editForm.role}
+                    onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="OWNER">OWNER</option>
+                    <option value="MANAGER">MANAGER</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                  <input
+                    type="checkbox"
+                    id="edit-active"
+                    checked={editForm.isActive}
+                    onChange={e => setEditForm({ ...editForm, isActive: e.target.checked })}
+                  />
+                  <label htmlFor="edit-active" style={{ fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer' }}>
+                    Account is Active
+                  </label>
+                </div>
+
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setEditingTenant(null)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={updatingUser}>
+                    {updatingUser ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── DELETE USER CONFIRM MODAL ───────────────────────────────────── */}
+        {deleteTarget && (
+          <ConfirmModal
+            title={`Delete "${deleteTarget.businessName}"?`}
+            message={`Are you sure you want to permanently delete "${deleteTarget.businessName}" (${deleteTarget.name})? All their workers, work entries, and payouts will be permanently wiped.`}
+            danger={true}
+            onConfirm={handleDeleteUser}
+            onCancel={() => setDeleteTarget(null)}
+          />
+        )}
+
+        {/* ─── STATUS TOGGLE CONFIRM MODAL ─────────────────────────────────── */}
+        {confirmToggleTarget && (
+          <ConfirmModal
+            title={confirmToggleTarget.isActive ? 'Suspend Business Account?' : 'Reactivate Business Account?'}
+            message={
+              confirmToggleTarget.isActive
+                ? `Are you sure you want to suspend "${confirmToggleTarget.businessName}"? Their login sessions will be terminated immediately.`
+                : `Are you sure you want to reactivate "${confirmToggleTarget.businessName}"? They will immediately be able to log in.`
+            }
+            danger={confirmToggleTarget.isActive}
+            onConfirm={handleConfirmToggle}
+            onCancel={() => setConfirmToggleTarget(null)}
+          />
+        )}
+
+        {/* ─── TENANT DRILLDOWN & COMPLETE MANAGEMENT MODAL ─────────────────── */}
         {selectedTenantId && (
           <div className="modal-backdrop" onClick={() => setSelectedTenantId(null)}>
             <div className="modal-card modal-large" onClick={(e) => e.stopPropagation()}>
@@ -724,68 +1179,114 @@ export default function AdminPage() {
                   {/* Tenant Specific KPIs */}
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 12,
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: 10,
                     marginBottom: 20,
                   }}>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>WORKERS FLEET</div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--indigo-light)', marginTop: 4 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>WORKERS</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--indigo-light)', marginTop: 3 }}>
                         {tenantDetail.stats.workerCount}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>BAGS COMPLETED</div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--emerald-light)', marginTop: 4 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>BAGS MADE</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--emerald-light)', marginTop: 3 }}>
                         {fmt(tenantDetail.stats.totalBags)}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL EARNED</div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-white)', marginTop: 4 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL EARNED</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-white)', marginTop: 3 }}>
                         {fmtCur(tenantDetail.stats.totalEarned)}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL PAID</div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--emerald-light)', marginTop: 4 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>TOTAL PAID</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--emerald-light)', marginTop: 3 }}>
                         {fmtCur(tenantDetail.stats.totalPaid)}
                       </div>
                     </div>
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '12px 14px' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>PENDING BALANCE</div>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: tenantDetail.stats.pendingAmount > 0 ? 'var(--amber-light)' : 'var(--text-muted)', marginTop: 4 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 12, padding: '10px 12px' }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>PENDING</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: tenantDetail.stats.pendingAmount > 0 ? 'var(--amber-light)' : 'var(--text-muted)', marginTop: 3 }}>
                         {fmtCur(tenantDetail.stats.pendingAmount)}
                       </div>
                     </div>
                   </div>
 
-                  {/* Sub-tabs */}
-                  <div style={{ display: 'flex', gap: 8, borderBottom: '1px solid var(--border-subtle)', marginBottom: 16 }}>
-                    <button
-                      className={`admin-tab-btn ${detailTab === 'workers' ? 'active' : ''}`}
-                      onClick={() => setDetailTab('workers')}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <Users size={14} />
-                      <span>Workers Fleet ({tenantDetail.workers.length})</span>
-                    </button>
-                    <button
-                      className={`admin-tab-btn ${detailTab === 'work' ? 'active' : ''}`}
-                      onClick={() => setDetailTab('work')}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <ClipboardList size={14} />
-                      <span>Recent Work Logs ({tenantDetail.recentWork.length})</span>
-                    </button>
-                    <button
-                      className={`admin-tab-btn ${detailTab === 'payouts' ? 'active' : ''}`}
-                      onClick={() => setDetailTab('payouts')}
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <Wallet size={14} />
-                      <span>Recent Payouts ({tenantDetail.recentPayouts.length})</span>
-                    </button>
+                  {/* Sub-tabs & Action Buttons */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    borderBottom: '1px solid var(--border-subtle)',
+                    marginBottom: 16,
+                    flexWrap: 'wrap',
+                    gap: 10,
+                  }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className={`admin-tab-btn ${detailTab === 'workers' ? 'active' : ''}`}
+                        onClick={() => setDetailTab('workers')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Users size={14} />
+                        <span>Workers ({tenantDetail.workers.length})</span>
+                      </button>
+                      <button
+                        className={`admin-tab-btn ${detailTab === 'work' ? 'active' : ''}`}
+                        onClick={() => setDetailTab('work')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <ClipboardList size={14} />
+                        <span>Work Entries ({tenantDetail.recentWork.length})</span>
+                      </button>
+                      <button
+                        className={`admin-tab-btn ${detailTab === 'payouts' ? 'active' : ''}`}
+                        onClick={() => setDetailTab('payouts')}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <Wallet size={14} />
+                        <span>Payouts ({tenantDetail.recentPayouts.length})</span>
+                      </button>
+                    </div>
+
+                    {/* Master Action for current tab */}
+                    <div>
+                      {detailTab === 'workers' && (
+                        <button
+                          onClick={() => setShowAddWorkerModal(true)}
+                          className="btn-primary btn-sm"
+                          style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                        >
+                          <Plus size={14} />
+                          <span>Add Worker</span>
+                        </button>
+                      )}
+                      {detailTab === 'work' && (
+                        <button
+                          onClick={() => setShowAddWorkModal(true)}
+                          className="btn-primary btn-sm"
+                          disabled={tenantDetail.workers.length === 0}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                        >
+                          <Plus size={14} />
+                          <span>Log Work Entry</span>
+                        </button>
+                      )}
+                      {detailTab === 'payouts' && (
+                        <button
+                          onClick={() => setShowAddPayoutModal(true)}
+                          className="btn-primary btn-sm"
+                          disabled={tenantDetail.workers.length === 0}
+                          style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                        >
+                          <Plus size={14} />
+                          <span>Record Payout</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* TAB 1: WORKERS */}
@@ -793,7 +1294,12 @@ export default function AdminPage() {
                     <div style={{ overflowX: 'auto' }}>
                       {tenantDetail.workers.length === 0 ? (
                         <div style={{ padding: '36px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                          This business has not added any workers yet.
+                          No workers added yet for this business.
+                          <div style={{ marginTop: 10 }}>
+                            <button className="btn-primary btn-sm" onClick={() => setShowAddWorkerModal(true)}>
+                              + Add First Worker
+                            </button>
+                          </div>
                         </div>
                       ) : (
                         <table className="data-table" style={{ fontSize: 13 }}>
@@ -805,6 +1311,7 @@ export default function AdminPage() {
                               <th>BAGS MADE</th>
                               <th>TOTAL EARNED</th>
                               <th>STATUS</th>
+                              <th style={{ textAlign: 'right' }}>ACTION</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -821,6 +1328,16 @@ export default function AdminPage() {
                                   ) : (
                                     <span style={{ color: 'var(--rose-light)', fontSize: 11, fontWeight: 600 }}>Inactive</span>
                                   )}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleDeleteWorker(w.id)}
+                                    className="btn-icon danger"
+                                    style={{ width: 28, height: 28 }}
+                                    title="Delete Worker"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
                                 </td>
                               </tr>
                             ))}
@@ -847,6 +1364,7 @@ export default function AdminPage() {
                               <th>RATE</th>
                               <th>TOTAL AMOUNT</th>
                               <th>NOTES</th>
+                              <th style={{ textAlign: 'right' }}>ACTION</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -858,6 +1376,16 @@ export default function AdminPage() {
                                 <td>₹{entry.ratePerBag}</td>
                                 <td style={{ fontWeight: 600, color: 'var(--emerald-light)' }}>{fmtCur(entry.totalAmount)}</td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{entry.notes || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleDeleteWork(entry.id)}
+                                    className="btn-icon danger"
+                                    style={{ width: 28, height: 28 }}
+                                    title="Delete Entry"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -882,6 +1410,7 @@ export default function AdminPage() {
                               <th>AMOUNT PAID</th>
                               <th>MODE</th>
                               <th>REFERENCE</th>
+                              <th style={{ textAlign: 'right' }}>ACTION</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -902,6 +1431,16 @@ export default function AdminPage() {
                                   </span>
                                 </td>
                                 <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{p.referenceNote || '-'}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <button
+                                    onClick={() => handleDeletePayout(p.id)}
+                                    className="btn-icon danger"
+                                    style={{ width: 28, height: 28 }}
+                                    title="Delete Payout"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </td>
                               </tr>
                             ))}
                           </tbody>
@@ -928,19 +1467,196 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* ─── STATUS TOGGLE CONFIRM MODAL ─────────────────────────────────── */}
-        {confirmTarget && (
-          <ConfirmModal
-            title={confirmTarget.isActive ? 'Suspend Business Account?' : 'Reactivate Business Account?'}
-            message={
-              confirmTarget.isActive
-                ? `Are you sure you want to suspend "${confirmTarget.businessName}" (${confirmTarget.name})? Their active sessions and login tokens will be immediately revoked, and they will not be able to log in until reactivated.`
-                : `Are you sure you want to reactivate "${confirmTarget.businessName}" (${confirmTarget.name})? The user will immediately be able to log in and manage their factory.`
-            }
-            danger={confirmTarget.isActive}
-            onConfirm={handleConfirmToggle}
-            onCancel={() => setConfirmTarget(null)}
-          />
+        {/* ─── ADD WORKER FOR TENANT MODAL ─────────────────────────────────── */}
+        {showAddWorkerModal && (
+          <div className="modal-backdrop" onClick={() => setShowAddWorkerModal(false)} style={{ zIndex: 1100 }}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <h3 className="modal-title">+ Add Worker for Business</h3>
+              <form onSubmit={handleAddWorker}>
+                <div className="form-group">
+                  <label className="form-label">Worker Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Ramesh Worker"
+                    value={workerForm.name}
+                    onChange={e => setWorkerForm({ ...workerForm, name: e.target.value })}
+                    className="form-input"
+                    autoFocus
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Mobile Number</label>
+                  <input
+                    type="tel"
+                    placeholder="Optional 10-digit mobile"
+                    value={workerForm.mobile}
+                    onChange={e => setWorkerForm({ ...workerForm, mobile: e.target.value.replace(/\D/g, '') })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Rate Per Bag (₹) *</label>
+                  <input
+                    type="number"
+                    step="0.25"
+                    required
+                    value={workerForm.ratePerBag}
+                    onChange={e => setWorkerForm({ ...workerForm, ratePerBag: parseFloat(e.target.value) || 0 })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowAddWorkerModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={savingWorker}>
+                    {savingWorker ? 'Saving…' : 'Add Worker'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── ADD WORK ENTRY FOR TENANT MODAL ─────────────────────────────── */}
+        {showAddWorkModal && tenantDetail && (
+          <div className="modal-backdrop" onClick={() => setShowAddWorkModal(false)} style={{ zIndex: 1100 }}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <h3 className="modal-title">+ Log Work Production Entry</h3>
+              <form onSubmit={handleAddWork}>
+                <div className="form-group">
+                  <label className="form-label">Select Worker *</label>
+                  <select
+                    required
+                    value={workForm.employeeId}
+                    onChange={e => setWorkForm({ ...workForm, employeeId: e.target.value })}
+                    className="form-select"
+                    autoFocus
+                  >
+                    <option value="">-- Choose Worker --</option>
+                    {tenantDetail.workers.map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.name} (₹{w.ratePerBag}/bag)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Production Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={workForm.date}
+                    onChange={e => setWorkForm({ ...workForm, date: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Bags Completed *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="e.g. 150"
+                    value={workForm.bagCount}
+                    onChange={e => setWorkForm({ ...workForm, bagCount: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Notes (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="Shift details, lot number…"
+                    value={workForm.notes}
+                    onChange={e => setWorkForm({ ...workForm, notes: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowAddWorkModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={savingWork}>
+                    {savingWork ? 'Recording…' : 'Record Entry'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ─── ADD PAYOUT FOR TENANT MODAL ─────────────────────────────────── */}
+        {showAddPayoutModal && tenantDetail && (
+          <div className="modal-backdrop" onClick={() => setShowAddPayoutModal(false)} style={{ zIndex: 1100 }}>
+            <div className="modal-card" onClick={e => e.stopPropagation()}>
+              <h3 className="modal-title">+ Record Worker Payout</h3>
+              <form onSubmit={handleAddPayout}>
+                <div className="form-group">
+                  <label className="form-label">Select Worker *</label>
+                  <select
+                    required
+                    value={payoutForm.employeeId}
+                    onChange={e => setPayoutForm({ ...payoutForm, employeeId: e.target.value })}
+                    className="form-select"
+                    autoFocus
+                  >
+                    <option value="">-- Choose Worker --</option>
+                    {tenantDetail.workers.map(w => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Payout Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={payoutForm.date}
+                    onChange={e => setPayoutForm({ ...payoutForm, date: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Payout Amount (₹) *</label>
+                  <input
+                    type="number"
+                    step="1"
+                    min="1"
+                    required
+                    placeholder="e.g. 500"
+                    value={payoutForm.payoutAmount}
+                    onChange={e => setPayoutForm({ ...payoutForm, payoutAmount: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Payment Mode</label>
+                  <select
+                    value={payoutForm.paymentMode}
+                    onChange={e => setPayoutForm({ ...payoutForm, paymentMode: e.target.value })}
+                    className="form-select"
+                  >
+                    <option value="CASH">CASH</option>
+                    <option value="UPI">UPI</option>
+                    <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                    <option value="CHEQUE">CHEQUE</option>
+                  </select>
+                </div>
+                <div className="modal-actions">
+                  <button type="button" className="btn-secondary" onClick={() => setShowAddPayoutModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn-primary" disabled={savingPayout}>
+                    {savingPayout ? 'Saving…' : 'Record Payout'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </Layout>
     </>

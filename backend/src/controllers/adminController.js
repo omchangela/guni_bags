@@ -316,10 +316,302 @@ const toggleUserStatus = async (req, res) => {
   }
 };
 
+// POST /api/v1/admin/users — Create a new business tenant directly from admin panel
+const createUser = async (req, res) => {
+  try {
+    const { name, businessName, mobile, countryCode = '+91', role = 'OWNER', isActive = true } = req.body;
+    if (!name || !name.trim()) {
+      return errorResponse(res, 'Full name is required', 'VALIDATION_ERROR');
+    }
+    if (!mobile) {
+      return errorResponse(res, 'Mobile number is required', 'VALIDATION_ERROR');
+    }
+
+    const cleanMobile = String(mobile).replace(/\D/g, '');
+    if (cleanMobile.length !== 10) {
+      return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
+    }
+
+    const [existing] = await pool.execute('SELECT id FROM users WHERE mobile = ?', [cleanMobile]);
+    if (existing.length > 0) {
+      return errorResponse(res, 'A business with this mobile number already exists', 'ALREADY_EXISTS', null, 409);
+    }
+
+    const userId = `usr_${Date.now()}`;
+    const cleanBusiness = (businessName && businessName.trim()) || `${name.trim()}'s Gunny Bags`;
+
+    await pool.execute(
+      'INSERT INTO users (id, mobile, country_code, name, business_name, role, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [userId, cleanMobile, countryCode, name.trim(), cleanBusiness, role, isActive ? 1 : 0]
+    );
+
+    return successResponse(res, {
+      id: userId,
+      name: name.trim(),
+      businessName: cleanBusiness,
+      mobile: cleanMobile,
+      countryCode,
+      role,
+      isActive: !!isActive,
+      workerCount: 0,
+      totalBags: 0,
+      totalAmount: 0,
+      totalPaid: 0,
+      pendingAmount: 0,
+      createdAt: new Date().toISOString(),
+    }, 'Business tenant created successfully', 201);
+  } catch (err) {
+    console.error('createUser error:', err);
+    return errorResponse(res, 'Failed to create business tenant', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// PUT /api/v1/admin/users/:userId — Update tenant details
+const updateUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, businessName, mobile, role, isActive } = req.body;
+
+    const [existing] = await pool.execute('SELECT id, role, mobile, name, business_name, is_active FROM users WHERE id = ?', [userId]);
+    if (!existing.length) return errorResponse(res, 'User not found', 'NOT_FOUND', null, 404);
+
+    if (existing[0].role === 'SUPER_ADMIN') {
+      return errorResponse(res, 'Cannot modify Super Admin account through tenant editor', 'FORBIDDEN', null, 403);
+    }
+
+    const cleanMobile = mobile ? String(mobile).replace(/\D/g, '') : undefined;
+    if (cleanMobile && cleanMobile.length !== 10) {
+      return errorResponse(res, 'Enter a valid 10-digit mobile number', 'VALIDATION_ERROR');
+    }
+
+    if (cleanMobile) {
+      const [conflicts] = await pool.execute('SELECT id FROM users WHERE mobile = ? AND id != ?', [cleanMobile, userId]);
+      if (conflicts.length > 0) {
+        return errorResponse(res, 'Mobile number already used by another account', 'ALREADY_EXISTS', null, 409);
+      }
+    }
+
+    const newName = name !== undefined ? name.trim() : existing[0].name;
+    const newBiz = businessName !== undefined ? businessName.trim() : existing[0].business_name;
+    const newMob = cleanMobile !== undefined ? cleanMobile : existing[0].mobile;
+    const newRole = role !== undefined ? role : existing[0].role;
+    const newActive = isActive !== undefined ? (isActive ? 1 : 0) : existing[0].is_active;
+
+    await pool.execute(
+      'UPDATE users SET name = ?, business_name = ?, mobile = ?, role = ?, is_active = ? WHERE id = ?',
+      [newName, newBiz, newMob, newRole, newActive, userId]
+    );
+
+    return successResponse(res, {
+      id: userId,
+      name: newName,
+      businessName: newBiz,
+      mobile: newMob,
+      role: newRole,
+      isActive: !!newActive,
+    }, 'Business details updated successfully');
+  } catch (err) {
+    console.error('updateUser error:', err);
+    return errorResponse(res, 'Failed to update business tenant', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// DELETE /api/v1/admin/users/:userId — Delete tenant and all associated records
+const deleteUser = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const [existing] = await pool.execute('SELECT id, role, mobile FROM users WHERE id = ?', [userId]);
+    if (!existing.length) return errorResponse(res, 'User not found', 'NOT_FOUND', null, 404);
+
+    if (existing[0].role === 'SUPER_ADMIN') {
+      return errorResponse(res, 'Cannot delete Super Admin account', 'FORBIDDEN', null, 403);
+    }
+
+    await pool.execute('DELETE FROM payouts WHERE created_by = ?', [userId]);
+    await pool.execute('DELETE FROM work_entries WHERE created_by = ?', [userId]);
+    await pool.execute('DELETE FROM employees WHERE created_by = ?', [userId]);
+    await pool.execute('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
+    await pool.execute('DELETE FROM otp_sessions WHERE mobile = ?', [existing[0].mobile]);
+    await pool.execute('DELETE FROM users WHERE id = ?', [userId]);
+
+    return successResponse(res, { userId }, 'Business tenant and all records deleted permanently');
+  } catch (err) {
+    console.error('deleteUser error:', err);
+    return errorResponse(res, 'Failed to delete business user', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// POST /api/v1/admin/users/:userId/workers — Add a worker on behalf of a tenant
+const addWorkerForTenant = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, mobile = '', ratePerBag = 5.0, address = '', notes = '', isActive = true } = req.body;
+
+    if (!name || !name.trim()) return errorResponse(res, 'Worker name is required', 'VALIDATION_ERROR');
+
+    const workerId = `emp_${Date.now()}`;
+    await pool.execute(
+      'INSERT INTO employees (id, name, mobile, rate_per_bag, is_active, address, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [workerId, name.trim(), mobile || null, parseFloat(ratePerBag) || 5.0, isActive ? 1 : 0, address, notes, userId]
+    );
+
+    return successResponse(res, {
+      id: workerId,
+      name: name.trim(),
+      mobile,
+      ratePerBag: parseFloat(ratePerBag) || 5.0,
+      isActive: !!isActive,
+      address,
+      notes,
+      totalBags: 0,
+      totalEarned: 0,
+    }, 'Worker added successfully', 201);
+  } catch (err) {
+    console.error('addWorkerForTenant error:', err);
+    return errorResponse(res, 'Failed to add worker for business', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// DELETE /api/v1/admin/users/:userId/workers/:workerId
+const deleteWorkerForTenant = async (req, res) => {
+  try {
+    const { userId, workerId } = req.params;
+    await pool.execute('DELETE FROM payouts WHERE employee_id = ? AND created_by = ?', [workerId, userId]);
+    await pool.execute('DELETE FROM work_entries WHERE employee_id = ? AND created_by = ?', [workerId, userId]);
+    const [result] = await pool.execute('DELETE FROM employees WHERE id = ? AND created_by = ?', [workerId, userId]);
+    if (!result.affectedRows) return errorResponse(res, 'Worker not found', 'NOT_FOUND', null, 404);
+    return successResponse(res, { workerId }, 'Worker deleted successfully');
+  } catch (err) {
+    console.error('deleteWorkerForTenant error:', err);
+    return errorResponse(res, 'Failed to delete worker', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// POST /api/v1/admin/users/:userId/work-entries
+const addWorkEntryForTenant = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { employeeId, date, ratePerBag, time, notes = '' } = req.body;
+    const bagCount = req.body.bagCount ?? req.body.bagsCompleted ?? req.body.bagsCount;
+
+    if (!employeeId || !date || bagCount === undefined || bagCount === null) {
+      return errorResponse(res, 'employeeId, date and bagCount are required', 'VALIDATION_ERROR');
+    }
+
+    const [emp] = await pool.execute('SELECT id, name, rate_per_bag FROM employees WHERE id = ? AND created_by = ?', [employeeId, userId]);
+    if (!emp.length) return errorResponse(res, 'Worker does not belong to this business', 'NOT_FOUND', null, 404);
+
+    const rate = ratePerBag !== undefined ? parseFloat(ratePerBag) : parseFloat(emp[0].rate_per_bag);
+    const entryId = `work_${Date.now()}`;
+
+    await pool.execute(
+      'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [entryId, employeeId, date, parseInt(bagCount), rate, time || null, notes, userId]
+    );
+
+    return successResponse(res, {
+      id: entryId,
+      employeeId,
+      employeeName: emp[0].name,
+      date,
+      bagCount: parseInt(bagCount),
+      ratePerBag: rate,
+      totalAmount: parseInt(bagCount) * rate,
+      notes,
+    }, 'Work entry recorded successfully', 201);
+  } catch (err) {
+    console.error('addWorkEntryForTenant error:', err);
+    return errorResponse(res, 'Failed to add work entry', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// DELETE /api/v1/admin/users/:userId/work-entries/:entryId
+const deleteWorkEntryForTenant = async (req, res) => {
+  try {
+    const { userId, entryId } = req.params;
+    const [result] = await pool.execute('DELETE FROM work_entries WHERE id = ? AND created_by = ?', [entryId, userId]);
+    if (!result.affectedRows) return errorResponse(res, 'Work entry not found', 'NOT_FOUND', null, 404);
+    return successResponse(res, { entryId }, 'Work entry deleted successfully');
+  } catch (err) {
+    console.error('deleteWorkEntryForTenant error:', err);
+    return errorResponse(res, 'Failed to delete work entry', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// POST /api/v1/admin/users/:userId/payouts
+const addPayoutForTenant = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { employeeId, date, paymentMode = 'CASH', referenceNote = '' } = req.body;
+    const payoutAmount = req.body.payoutAmount ?? req.body.amount;
+
+    if (!employeeId || !date || payoutAmount === undefined || payoutAmount === null) {
+      return errorResponse(res, 'employeeId, date and payoutAmount are required', 'VALIDATION_ERROR');
+    }
+
+    const [emp] = await pool.execute('SELECT id, name FROM employees WHERE id = ? AND created_by = ?', [employeeId, userId]);
+    if (!emp.length) return errorResponse(res, 'Worker does not belong to this business', 'NOT_FOUND', null, 404);
+
+    const [[earnedRow]] = await pool.execute(
+      'SELECT COALESCE(SUM(total_amount), 0) AS total_earned FROM work_entries WHERE employee_id = ? AND created_by = ?',
+      [employeeId, userId]
+    );
+    const [[paidRow]] = await pool.execute(
+      'SELECT COALESCE(SUM(payout_amount), 0) AS total_paid FROM payouts WHERE employee_id = ? AND created_by = ?',
+      [employeeId, userId]
+    );
+    const pendingBefore = parseFloat(earnedRow.total_earned) - parseFloat(paidRow.total_paid);
+    const remaining = pendingBefore - parseFloat(payoutAmount);
+
+    const payoutId = `pay_${Date.now()}`;
+    await pool.execute(
+      'INSERT INTO payouts (id, employee_id, date, payout_amount, pending_before_payout, remaining_amount, payment_mode, reference_note, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [payoutId, employeeId, date, parseFloat(payoutAmount), pendingBefore, remaining, paymentMode, referenceNote, userId]
+    );
+
+    return successResponse(res, {
+      id: payoutId,
+      employeeId,
+      employeeName: emp[0].name,
+      date,
+      payoutAmount: parseFloat(payoutAmount),
+      paymentMode,
+      referenceNote,
+    }, 'Payout recorded successfully', 201);
+  } catch (err) {
+    console.error('addPayoutForTenant error:', err);
+    return errorResponse(res, 'Failed to record payout', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
+// DELETE /api/v1/admin/users/:userId/payouts/:payoutId
+const deletePayoutForTenant = async (req, res) => {
+  try {
+    const { userId, payoutId } = req.params;
+    const [result] = await pool.execute('DELETE FROM payouts WHERE id = ? AND created_by = ?', [payoutId, userId]);
+    if (!result.affectedRows) return errorResponse(res, 'Payout record not found', 'NOT_FOUND', null, 404);
+    return successResponse(res, { payoutId }, 'Payout deleted successfully');
+  } catch (err) {
+    console.error('deletePayoutForTenant error:', err);
+    return errorResponse(res, 'Failed to delete payout', 'SERVER_ERROR', err.message, 500);
+  }
+};
+
 module.exports = {
   requireSuperAdmin,
   getPlatformStats,
   getAllUsers,
   getUserDetails,
   toggleUserStatus,
+  createUser,
+  updateUser,
+  deleteUser,
+  addWorkerForTenant,
+  deleteWorkerForTenant,
+  addWorkEntryForTenant,
+  deleteWorkEntryForTenant,
+  addPayoutForTenant,
+  deletePayoutForTenant,
 };
+

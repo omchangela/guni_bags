@@ -89,4 +89,26 @@ export const getAdminUserDetails = (userId: string) => api.get(`/admin/users/${u
 export const toggleTenantStatus = (userId: string, isActive: boolean) =>
   api.patch(`/admin/users/${userId}/status`, { isActive });
 
+export const createAdminUser = (data: { name: string; businessName?: string; mobile: string; countryCode?: string; role?: string; isActive?: boolean }) =>
+  api.post('/admin/users', data);
+export const updateAdminUser = (userId: string, data: Record<string, unknown>) =>
+  api.put(`/admin/users/${userId}`, data);
+export const deleteAdminUser = (userId: string) =>
+  api.delete(`/admin/users/${userId}`);
+
+export const addAdminWorker = (userId: string, data: Record<string, unknown>) =>
+  api.post(`/admin/users/${userId}/workers`, data);
+export const deleteAdminWorker = (userId: string, workerId: string) =>
+  api.delete(`/admin/users/${userId}/workers/${workerId}`);
+
+export const addAdminWorkEntry = (userId: string, data: Record<string, unknown>) =>
+  api.post(`/admin/users/${userId}/work-entries`, data);
+export const deleteAdminWorkEntry = (userId: string, entryId: string) =>
+  api.delete(`/admin/users/${userId}/work-entries/${entryId}`);
+
+export const addAdminPayout = (userId: string, data: Record<string, unknown>) =>
+  api.post(`/admin/users/${userId}/payouts`, data);
+export const deleteAdminPayout = (userId: string, payoutId: string) =>
+  api.delete(`/admin/users/${userId}/payouts/${payoutId}`);
+
 export default api;
