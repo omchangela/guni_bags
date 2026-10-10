@@ -10,7 +10,7 @@ const getWorkEntries = async (req, res) => {
 
     let sql = `
       SELECT w.id, w.employee_id, e.name AS employee_name, w.date, 
-             w.bag_count, w.rate_per_bag, w.total_amount, w.entry_time, w.notes
+             w.bag_count, w.rate_per_bag, w.additional_charges, w.total_amount, w.entry_time, w.notes
       FROM work_entries w
       JOIN employees e ON e.id = w.employee_id
       WHERE w.created_by = ?
@@ -40,6 +40,7 @@ const getWorkEntries = async (req, res) => {
       date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date,
       bagCount: r.bag_count,
       ratePerBag: parseFloat(r.rate_per_bag),
+      additionalCharges: parseFloat(r.additional_charges || 0),
       totalAmount: parseFloat(r.total_amount),
       time: formatTimeForDisplay(r.entry_time),
       notes: r.notes || '',
@@ -66,9 +67,12 @@ const addWorkEntry = async (req, res) => {
     const userId = req.user.id;
     const { employeeId, date, ratePerBag, time, notes = '' } = req.body;
     const bagCount = req.body.bagCount ?? req.body.bagsCompleted ?? req.body.bagsCount;
+    const additionalCharges = parseFloat(req.body.additionalCharges ?? req.body.additional_charges ?? 0) || 0;
+
     if (!employeeId || !date || bagCount === undefined || bagCount === null)
       return errorResponse(res, 'employeeId, date and bagCount are required', 'VALIDATION_ERROR');
     if (bagCount <= 0) return errorResponse(res, 'Bag count must be positive', 'VALIDATION_ERROR');
+    if (additionalCharges < 0) return errorResponse(res, 'Additional charges cannot be negative', 'VALIDATION_ERROR');
 
     // Ensure worker belongs to this business owner
     const [emp] = await pool.execute(
@@ -80,19 +84,20 @@ const addWorkEntry = async (req, res) => {
       return errorResponse(res, 'Cannot add work entry for an inactive worker. Please reactivate them first.', 'EMPLOYEE_INACTIVE', null, 400);
     }
 
-    const rate = ratePerBag || parseFloat(emp[0].rate_per_bag);
+    const rate = ratePerBag ? parseFloat(ratePerBag) : parseFloat(emp[0].rate_per_bag);
     const id = `w_${Date.now()}`;
     const entryTime = formatTimeForDB(time);
 
     await pool.execute(
-      'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, employeeId, date, bagCount, rate, entryTime, notes, userId]
+      'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, additional_charges, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, employeeId, date, bagCount, rate, additionalCharges, entryTime, notes, userId]
     );
 
     return successResponse(res, {
       id, employeeId, employeeName: emp[0].name, date,
       bagCount: parseInt(bagCount), ratePerBag: rate,
-      totalAmount: parseInt(bagCount) * rate,
+      additionalCharges,
+      totalAmount: (parseInt(bagCount) * rate) + additionalCharges,
       time: formatTimeForDisplay(entryTime), notes,
       createdAt: new Date().toISOString(),
     }, 'Work entry added successfully', 201);
@@ -109,17 +114,26 @@ const updateWorkEntry = async (req, res) => {
     const userId = req.user.id;
     const { ratePerBag, date, time, notes } = req.body;
     const bagCount = req.body.bagCount ?? req.body.bagsCompleted ?? req.body.bagsCount;
+    const hasAddCharges = req.body.additionalCharges !== undefined || req.body.additional_charges !== undefined;
+    const additionalCharges = hasAddCharges ? (parseFloat(req.body.additionalCharges ?? req.body.additional_charges) || 0) : null;
 
     const [existing] = await pool.execute(
-      'SELECT id FROM work_entries WHERE id = ? AND created_by = ?',
+      'SELECT id, bag_count, rate_per_bag, additional_charges, date, entry_time, notes FROM work_entries WHERE id = ? AND created_by = ?',
       [id, userId]
     );
     if (!existing.length) return errorResponse(res, 'Work entry not found in your business', 'NOT_FOUND', null, 404);
 
-    const entryTime = formatTimeForDB(time);
+    const prev = existing[0];
+    const newBagCount = bagCount !== undefined ? bagCount : prev.bag_count;
+    const newRate = ratePerBag !== undefined ? parseFloat(ratePerBag) : parseFloat(prev.rate_per_bag);
+    const newAddCharges = additionalCharges !== null ? additionalCharges : parseFloat(prev.additional_charges || 0);
+    const newDate = date || prev.date;
+    const newTime = time !== undefined ? formatTimeForDB(time) : prev.entry_time;
+    const newNotes = notes !== undefined ? notes : prev.notes;
+
     await pool.execute(
-      'UPDATE work_entries SET bag_count=?, rate_per_bag=?, date=?, entry_time=?, notes=? WHERE id=? AND created_by=?',
-      [bagCount, ratePerBag, date, entryTime, notes || '', id, userId]
+      'UPDATE work_entries SET bag_count=?, rate_per_bag=?, additional_charges=?, date=?, entry_time=?, notes=? WHERE id=? AND created_by=?',
+      [newBagCount, newRate, newAddCharges, newDate, newTime, newNotes || '', id, userId]
     );
 
     const [rows] = await pool.execute(
@@ -131,6 +145,7 @@ const updateWorkEntry = async (req, res) => {
       id: r.id, employeeId: r.employee_id, employeeName: r.employee_name,
       date: r.date instanceof Date ? r.date.toISOString().split('T')[0] : r.date,
       bagCount: r.bag_count, ratePerBag: parseFloat(r.rate_per_bag),
+      additionalCharges: parseFloat(r.additional_charges || 0),
       totalAmount: parseFloat(r.total_amount), time: formatTimeForDisplay(r.entry_time),
       notes: r.notes || '',
     }, 'Work entry updated successfully');

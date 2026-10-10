@@ -116,7 +116,8 @@ Click **Authorize** at the top right to set your token once for all test request
           date: { type: 'string', format: 'date', example: '2026-10-08' },
           bagCount: { type: 'integer', example: 150 },
           ratePerBag: { type: 'number', format: 'float', example: 5.0 },
-          totalAmount: { type: 'number', format: 'float', example: 750.0 },
+          additionalCharges: { type: 'number', format: 'float', example: 50.0 },
+          totalAmount: { type: 'number', format: 'float', example: 800.0 },
           time: { type: 'string', example: '14:30' },
           notes: { type: 'string', example: 'Lot 2 batch' },
         },
@@ -634,6 +635,7 @@ Click **Authorize** at the top right to set your token once for all test request
                   date: { type: 'string', format: 'date', example: '2026-10-08' },
                   bagCount: { type: 'integer', minimum: 1, example: 150 },
                   ratePerBag: { type: 'number', example: 5.0, description: 'Optional: defaults to worker piece rate' },
+                  additionalCharges: { type: 'number', default: 0.0, example: 50.0, description: 'Optional: extra charges in ₹ (defaults to 0.00)' },
                   time: { type: 'string', example: '14:30', description: 'Optional time' },
                   notes: { type: 'string', example: 'Lot 2 batch' },
                 },
@@ -659,7 +661,7 @@ Click **Authorize** at the top right to set your token once for all test request
       },
       put: {
         tags: ['Work Entries'],
-        summary: 'Update work entry (bag count, rate, date)',
+        summary: 'Update work entry (bag count, rate, additional charges, date)',
         security: [{ bearerAuth: [] }],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         requestBody: {
@@ -671,6 +673,7 @@ Click **Authorize** at the top right to set your token once for all test request
                 properties: {
                   bagCount: { type: 'integer', example: 160 },
                   ratePerBag: { type: 'number', example: 5.0 },
+                  additionalCharges: { type: 'number', example: 50.0 },
                   date: { type: 'string', format: 'date', example: '2026-10-08' },
                   notes: { type: 'string', example: 'Adjusted count' },
                 },

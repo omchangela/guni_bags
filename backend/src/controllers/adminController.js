@@ -196,7 +196,7 @@ const getUserDetails = async (req, res) => {
 
     // Fetch recent 10 work entries
     const [recentWork] = await pool.execute(`
-      SELECT w.id, w.employee_id, e.name AS employee_name, w.date, w.bag_count, w.rate_per_bag, w.total_amount, w.notes
+      SELECT w.id, w.employee_id, e.name AS employee_name, w.date, w.bag_count, w.rate_per_bag, w.additional_charges, w.total_amount, w.notes
       FROM work_entries w
       JOIN employees e ON e.id = w.employee_id
       WHERE w.created_by = ?
@@ -503,11 +503,12 @@ const addWorkEntryForTenant = async (req, res) => {
     if (!emp.length) return errorResponse(res, 'Worker does not belong to this business', 'NOT_FOUND', null, 404);
 
     const rate = ratePerBag !== undefined ? parseFloat(ratePerBag) : parseFloat(emp[0].rate_per_bag);
+    const additionalCharges = parseFloat(req.body.additionalCharges ?? req.body.additional_charges ?? 0) || 0;
     const entryId = `work_${Date.now()}`;
 
     await pool.execute(
-      'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [entryId, employeeId, date, parseInt(bagCount), rate, time || null, notes, userId]
+      'INSERT INTO work_entries (id, employee_id, date, bag_count, rate_per_bag, additional_charges, entry_time, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [entryId, employeeId, date, parseInt(bagCount), rate, additionalCharges, time || null, notes, userId]
     );
 
     return successResponse(res, {
@@ -517,7 +518,8 @@ const addWorkEntryForTenant = async (req, res) => {
       date,
       bagCount: parseInt(bagCount),
       ratePerBag: rate,
-      totalAmount: parseInt(bagCount) * rate,
+      additionalCharges,
+      totalAmount: (parseInt(bagCount) * rate) + additionalCharges,
       notes,
     }, 'Work entry recorded successfully', 201);
   } catch (err) {

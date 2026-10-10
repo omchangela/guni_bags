@@ -509,7 +509,8 @@ Returns full historical debit/credit ledger, total earned, total paid, and pendi
       "date": "2026-10-06",
       "bagCount": 150,
       "ratePerBag": 5,
-      "totalAmount": 750,
+      "additionalCharges": 50,
+      "totalAmount": 800,
       "time": null,
       "notes": "Morning shift"
     }
@@ -537,10 +538,23 @@ Records the number of gunny bags produced by a worker.
   "date": "2026-10-06",
   "bagCount": 150,
   "ratePerBag": 5.0,
+  "additionalCharges": 50.0,
   "time": "10:30 AM",
   "notes": "Morning shift"
 }
 ```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `employeeId` | String | Yes | Worker ID |
+| `date` | String | Yes | Work date `YYYY-MM-DD` |
+| `bagCount` | Integer | Yes | Bags produced (> 0) |
+| `ratePerBag` | Float | No | Piece rate in ₹ (defaults to worker rate) |
+| `additionalCharges` | Float | No | Additional / extra charges in ₹ (defaults to 0.00) |
+| `time` | String | No | Time of entry (e.g. `10:30 AM`) |
+| `notes` | String | No | Notes |
+
+> 💡 **Total Amount Formula:** `totalAmount = (bagCount * ratePerBag) + additionalCharges`
 
 #### Response (`201 Created`):
 ```json
@@ -554,7 +568,8 @@ Records the number of gunny bags produced by a worker.
     "date": "2026-10-06",
     "bagCount": 150,
     "ratePerBag": 5,
-    "totalAmount": 750,
+    "additionalCharges": 50,
+    "totalAmount": 800,
     "time": "10:30 AM",
     "notes": "Morning shift",
     "createdAt": "2026-10-06T04:55:03.551Z"
@@ -573,6 +588,7 @@ Records the number of gunny bags produced by a worker.
 {
   "bagCount": 160,
   "ratePerBag": 5.0,
+  "additionalCharges": 50.0,
   "date": "2026-10-06",
   "time": "10:45 AM",
   "notes": "Updated recount"

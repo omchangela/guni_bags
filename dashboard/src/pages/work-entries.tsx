@@ -11,11 +11,11 @@ const fmt = (n: number) => new Intl.NumberFormat('en-IN').format(n);
 
 interface WorkEntry {
   id: string; employeeId: string; employeeName: string; date: string;
-  bagCount: number; ratePerBag: number; totalAmount: number; time: string; notes: string;
+  bagCount: number; ratePerBag: number; additionalCharges?: number; totalAmount: number; time: string; notes: string;
 }
 interface Employee { id: string; name: string; ratePerBag: number; }
 
-const emptyForm = { employeeId: '', date: today(), bagCount: '', ratePerBag: '', time: '', notes: '' };
+const emptyForm = { employeeId: '', date: today(), bagCount: '', ratePerBag: '', additionalCharges: '', time: '', notes: '' };
 
 export default function WorkEntriesPage() {
   const { toast, show, hide } = useToast();
@@ -64,6 +64,7 @@ export default function WorkEntriesPage() {
     setForm({
       employeeId: entry.employeeId, date: entry.date,
       bagCount: String(entry.bagCount), ratePerBag: String(entry.ratePerBag),
+      additionalCharges: entry.additionalCharges ? String(entry.additionalCharges) : '',
       time: entry.time || '', notes: entry.notes || '',
     });
     setShowModal(true);
@@ -79,7 +80,12 @@ export default function WorkEntriesPage() {
     if (!form.employeeId || !form.bagCount) { show('Employee and bag count are required', 'error'); return; }
     setSaving(true);
     try {
-      const payload = { ...form, bagCount: parseInt(form.bagCount), ratePerBag: parseFloat(form.ratePerBag) };
+      const payload = {
+        ...form,
+        bagCount: parseInt(form.bagCount),
+        ratePerBag: parseFloat(form.ratePerBag),
+        additionalCharges: form.additionalCharges ? parseFloat(form.additionalCharges) : 0,
+      };
       if (editing) { await updateWorkEntry(editing.id, payload); show('Entry updated'); }
       else { await addWorkEntry(payload); show('Work entry added'); }
       setShowModal(false); load();
@@ -146,6 +152,7 @@ export default function WorkEntriesPage() {
                   <th>Employee</th>
                   <th>Bags</th>
                   <th>Rate</th>
+                  <th>Extra (₹)</th>
                   <th>Amount</th>
                   <th>Time</th>
                   <th>Notes</th>
@@ -153,7 +160,7 @@ export default function WorkEntriesPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? [1, 2, 3, 4].map(i => <SkeletonRow key={i} cols={8} />) :
+                {loading ? [1, 2, 3, 4].map(i => <SkeletonRow key={i} cols={9} />) :
                 entries.length ? entries.map(entry => (
                   <tr key={entry.id}>
                     <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{entry.date}</td>
@@ -165,6 +172,9 @@ export default function WorkEntriesPage() {
                       </div>
                     </td>
                     <td style={{ color: 'var(--text-secondary)' }}>₹{entry.ratePerBag}</td>
+                    <td style={{ color: entry.additionalCharges ? '#fbbf24' : 'var(--text-secondary)', fontWeight: entry.additionalCharges ? 600 : 400 }}>
+                      {entry.additionalCharges ? `+₹${entry.additionalCharges}` : '—'}
+                    </td>
                     <td style={{ fontWeight: 700, color: '#34d399' }}>{fmtCur(entry.totalAmount)}</td>
                     <td style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{entry.time || '—'}</td>
                     <td style={{ color: 'var(--text-secondary)', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -182,7 +192,7 @@ export default function WorkEntriesPage() {
                     </td>
                   </tr>
                 )) : (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 40 }}>No entries found</td></tr>
+                  <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: 40 }}>No entries found</td></tr>
                 )}
               </tbody>
             </table>
@@ -237,21 +247,26 @@ export default function WorkEntriesPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Additional Charges (₹)</label>
+                    <input type="number" step="0.5" min="0" className="form-input" value={form.additionalCharges}
+                      onChange={e => setForm(f => ({ ...f, additionalCharges: e.target.value }))} placeholder="0 (overtime, bonus)" />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">Time (optional)</label>
                     <input type="time" className="form-input" value={form.time?.replace(/(\d{2}:\d{2}).*/, '$1')}
                       onChange={e => setForm(f => ({ ...f, time: e.target.value }))} />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
-                    {form.bagCount && form.ratePerBag && (
-                      <div style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, width: '100%' }}>
-                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Total: </span>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
-                          ₹{(parseInt(form.bagCount || '0') * parseFloat(form.ratePerBag || '0')).toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
                 </div>
+                {form.bagCount && form.ratePerBag && (
+                  <div className="mb-4" style={{ padding: '10px 14px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                      Total ({form.bagCount} × ₹{form.ratePerBag}{parseFloat(form.additionalCharges || '0') > 0 ? ` + ₹${form.additionalCharges}` : ''}):
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: '#34d399' }}>
+                      ₹{((parseInt(form.bagCount || '0') * parseFloat(form.ratePerBag || '0')) + (parseFloat(form.additionalCharges || '0'))).toFixed(2)}
+                    </span>
+                  </div>
+                )}
                 <div className="form-group mb-6">
                   <label className="form-label">Notes</label>
                   <input className="form-input" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Lot 2 stitching…" />

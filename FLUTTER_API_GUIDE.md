@@ -482,7 +482,8 @@ Used to record how many bags each worker stitched or packed on a given day.
       "date": "2026-10-08",
       "bagCount": 150,
       "ratePerBag": 5.00,
-      "totalAmount": 750.00,
+      "additionalCharges": 50.00,
+      "totalAmount": 800.00,
       "time": "14:30",
       "notes": "Lot A batch"
     }
@@ -509,6 +510,7 @@ Used to record how many bags each worker stitched or packed on a given day.
   "date": "2026-10-08",
   "bagCount": 150,
   "ratePerBag": 5.00,
+  "additionalCharges": 50.00,
   "time": "14:30",
   "notes": "Standard 50kg gunny bags"
 }
@@ -519,8 +521,11 @@ Used to record how many bags each worker stitched or packed on a given day.
 | `date` | String | **Yes** | Work date in `YYYY-MM-DD` format |
 | `bagCount` | Integer | **Yes** | Number of bags completed (must be > 0) |
 | `ratePerBag` | Float | No | Custom rate for this entry (defaults to worker's base rate) |
+| `additionalCharges` | Float | No | Extra/additional charges in ₹ (e.g. overtime, loading, special bonus; defaults to `0.00`) |
 | `time` | String | No | Time of logging (e.g. `14:30`) |
 | `notes` | String | No | Batch number, lot, or comments |
+
+> 💡 **Total Amount Calculation:** `totalAmount = (bagCount * ratePerBag) + additionalCharges`
 
 #### Response (`201 Created`):
 ```json
@@ -533,7 +538,8 @@ Used to record how many bags each worker stitched or packed on a given day.
     "date": "2026-10-08",
     "bagCount": 150,
     "ratePerBag": 5.00,
-    "totalAmount": 750.00,
+    "additionalCharges": 50.00,
+    "totalAmount": 800.00,
     "notes": "Standard 50kg gunny bags"
   }
 }
@@ -551,6 +557,7 @@ Used to record how many bags each worker stitched or packed on a given day.
 {
   "bagCount": 160,
   "ratePerBag": 5.00,
+  "additionalCharges": 50.00,
   "date": "2026-10-08",
   "notes": "Corrected bag count"
 }

@@ -68,7 +68,8 @@ async function createTables(targetPool) {
       date DATE NOT NULL,
       bag_count INT NOT NULL DEFAULT 0,
       rate_per_bag DECIMAL(10,2) NOT NULL,
-      total_amount DECIMAL(10,2) GENERATED ALWAYS AS (bag_count * rate_per_bag) STORED,
+      additional_charges DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+      total_amount DECIMAL(10,2) GENERATED ALWAYS AS ((bag_count * rate_per_bag) + additional_charges) STORED,
       entry_time TIME,
       notes TEXT,
       created_by VARCHAR(36),
@@ -114,6 +115,14 @@ async function createTables(targetPool) {
 
   try {
     await targetPool.query(`ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL`);
+  } catch (e) {}
+
+  try {
+    await targetPool.query(`ALTER TABLE work_entries ADD COLUMN additional_charges DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER rate_per_bag`);
+  } catch (e) {}
+
+  try {
+    await targetPool.query(`ALTER TABLE work_entries MODIFY COLUMN total_amount DECIMAL(10,2) GENERATED ALWAYS AS ((bag_count * rate_per_bag) + additional_charges) STORED`);
   } catch (e) {}
 
   // Ensure Master Super Admin account exists: admin@admin.com / 123456
